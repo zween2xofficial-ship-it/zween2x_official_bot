@@ -11,12 +11,14 @@ TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 ADMIN_CHAT_ID = "8866210749" 
 
-# Gemini API Setup
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+# Gemini API Direct Setup
+GEMINI_API_KEY = "AQ.Ab8RN6KzgMRV7MJssoVPpR3hc2tWfQqKfFnUFsAre_yIm4fm4Q"
+
 ai_client = None
 if GEMINI_API_KEY:
     try:
         ai_client = genai.Client(api_key=GEMINI_API_KEY)
+        print("Gemini AI Client initialized successfully!")
     except Exception as e:
         print(f"Gemini Client Init Error: {e}")
 
@@ -159,16 +161,16 @@ def get_squad_details(provided_token):
 
 def get_ai_response(user_text):
     if not ai_client:
-        return "Bhai main z.ween2x official bot hu! Main tournament registration me aapki help kar sakta hu.\n\n👉 /register - Registration\n👉 /rules - Rules\n👉 Admin Support: @zween2xofficial"
+        return "Haan bhai, z.ween2x official bot par aapka swagat hai! Registration ke liye `/register` type karein."
 
     system_instruction = (
         "Aap z.ween2x Free Fire Esports Platform ke smart AI assistant hain. "
         "User se friendly, polite aur natural Hinglish me ek insaan ki tarah baat karein. "
-        "Aap user ke kisi bhi sawaal ka reply kar sakte hain. Aapko z.ween2x tournament ki details pata hain:\n"
+        "Aap user ke kisi bhi sawaal ka natural aur helpful jawab denge. Aapko z.ween2x tournament ki details pata hain:\n"
         "1. Strictly 128 teams cap aur 4 players per team limit hai.\n"
         "2. Registration fee ₹100 hai aur secure team token `#zween2x-0001-...` milta hai.\n"
         "3. User `/register` karke new team bana sakta hai ya token se join ho sakta hai.\n"
-        "Short, clear aur friendly conversation karein."
+        "Chote, friendly aur direct jawab dein."
     )
     
     try:
@@ -180,13 +182,15 @@ def get_ai_response(user_text):
         if response and response.text:
             return response.text
     except Exception as e:
-        print(f"Gemini API Call Error: {e}")
+        print(f"Gemini API Call Error Details: {e}")
         
-    return "Bhai main aapki baat samajh raha hu! Tournament registration ke liye `/register` type karein ya direct Admin (@zween2xofficial) se contact karein."
+    return "Haan bhai! Batayein main z.ween2x tournament ke baare me kya help karu aapki? Registration ke liye `/register` likhein."
 
 def send_message(chat_id, text, reply_markup=None, parse_mode="Markdown"):
     url = f"{TELEGRAM_API_URL}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
+    payload = {"chat_id": chat_id, "text": text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     if reply_markup:
         payload["reply_markup"] = reply_markup
     try:
@@ -323,7 +327,7 @@ def webhook():
                 "👉 /register - Start Registration Process\n"
                 "👉 /rules - Complete Tournament Rules\n"
                 "👉 /cancel - Cancel Current Process\n\n"
-                "💬 *Aap mujhse tournament ke baare me koi bhi sawaal pooch sakte hain!*"
+                "💬 *Aap mujhse tournament ya game ke baare me koi bhi sawaal pooch sakte hain!*"
             )
             send_message(chat_id, msg)
 
