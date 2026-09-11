@@ -12,7 +12,7 @@ TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 ADMIN_CHAT_ID = "8866210749" 
 
 # Gemini API Direct Setup
-GEMINI_API_KEY = "AQ.Ab8RN6KzgMRV7MJssoVPpR3hc2tWfQqKfFnUFsAre_yIm4fm4Q"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 ai_client = None
 if GEMINI_API_KEY:
