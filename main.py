@@ -13,7 +13,7 @@ user_data = {}
 token_counter = 1  # Unique token generator (#zween2x-00001)
 
 # Quick QR Code generator link for ₹100 payment
-UPI_ID = "9399223789@ybl"  # Apni UPI ID se replace karein agar alag ho
+UPI_ID = "z.ween2x.official@okicici"  # Apni UPI ID se replace karein agar alag ho
 PAYMENT_QR_URL = f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=upi://pay?pa={UPI_ID}&pn=z.ween2x%20Tournament&am=100&cu=INR"
 
 def send_message(chat_id, text, parse_mode="Markdown"):
