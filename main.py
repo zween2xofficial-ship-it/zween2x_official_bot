@@ -6,7 +6,6 @@ from flask import Flask, request
 BOT_TOKEN = "8913279275:AAE21IA0lEb9ArUH2STvQuuerXeEoLSYdYQ"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# Aapka Telegram Chat ID
 ADMIN_CHAT_ID = "8866210749" 
 
 app = Flask(__name__)
@@ -14,11 +13,10 @@ app = Flask(__name__)
 user_states = {}
 user_data = {}
 
-# Primary Payment UPI Details
 PRIMARY_UPI_ID = "z.ween2x.official@okaxis"
 PAYMENT_QR_URL = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=upi://pay?pa={PRIMARY_UPI_ID}%26pn=z.ween2x%20Official%26am=100%26cu=INR"
 
-# --- DATABASE SETUP (Token Counter Ke Liye) ---
+# --- DATABASE SETUP ---
 def init_db():
     conn = sqlite3.connect("tournament.db")
     cursor = conn.cursor()
@@ -28,22 +26,67 @@ def init_db():
             value INTEGER
         )
     """)
-    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('token_counter', 1)")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('team_counter', 1)")
+    
+    # Store team member counts
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS team_slots (
+            team_num INTEGER PRIMARY KEY,
+            members_count INTEGER DEFAULT 1
+        )
+    """)
     conn.commit()
     conn.close()
 
-def get_next_token():
+def get_new_team_token():
     conn = sqlite3.connect("tournament.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT value FROM config WHERE key = 'token_counter'")
-    current_val = cursor.fetchone()[0]
+    cursor.execute("SELECT value FROM config WHERE key = 'team_counter'")
+    current_team = cursor.fetchone()[0]
     
-    next_val = current_val + 1
-    cursor.execute("UPDATE config SET value = ? WHERE key = 'token_counter'", (next_val,))
+    next_team = current_team + 1
+    cursor.execute("UPDATE config SET value = ? WHERE key = 'team_counter'", (next_team,))
+    cursor.execute("INSERT INTO team_slots (team_num, members_count) VALUES (?, 1)", (current_team,))
+    
     conn.commit()
     conn.close()
     
-    return f"#zween2x-{current_val:02d}"
+    return f"#zween2x-{current_team:02d}-team-A"
+
+def get_join_team_token(team_input):
+    # Parse team number from user input like "#zween2x-01-team-A" or "01" or "1"
+    try:
+        clean_str = team_input.lower().replace("#zween2x-", "").split("-")[0]
+        team_num = int(clean_str)
+    except:
+        return None, "Invalid Team Format!"
+
+    conn = sqlite3.connect("tournament.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT members_count FROM team_slots WHERE team_num = ?", (team_num,))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        return None, "Yeh Team Number exist nahi karta!"
+
+    count = row[0]
+    if count >= 4:
+        conn.close()
+        return None, "Yeh Team pehle se FULL hai (4/4 Players Joined)!"
+
+    # Mapping count to letters: 1 -> B, 2 -> C, 3 -> D
+    letter_map = {1: "B", 2: "C", 3: "D"}
+    assigned_letter = letter_map[count]
+    
+    # Increment count for future approval
+    new_count = count + 1
+    cursor.execute("UPDATE team_slots SET members_count = ? WHERE team_num = ?", (new_count, team_num))
+    
+    conn.commit()
+    conn.close()
+
+    return f"#zween2x-{team_num:02d}-team-{assigned_letter}", "SUCCESS"
 
 init_db()
 
@@ -77,7 +120,7 @@ def edit_message_text(chat_id, message_id, text):
 # --- WEBHOOK ROUTE ---
 @app.route('/', methods=['GET'])
 def home():
-    return "z.ween2x Tournament Verification Engine Active!"
+    return "z.ween2x Multi-Player Team Engine Active!"
 
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def webhook():
@@ -85,56 +128,74 @@ def webhook():
     if not data:
         return "OK", 200
 
-    # 1. BUTTON CLICK (CALLBACK QUERY)
+    # 1. BUTTON CLICK HANDLER
     if "callback_query" in data:
         cb = data["callback_query"]
         cb_id = cb["id"]
         cb_data = cb["data"]
+        chat_id = cb["message"]["chat"]["id"]
         admin_msg_id = cb["message"]["message_id"]
 
-        action, target_chat_id = cb_data.split("_")
+        # Selection: New Team vs Join Team
+        if cb_data in ["choice_new_team", "choice_join_team"]:
+            if cb_data == "choice_new_team":
+                user_data[chat_id]["reg_type"] = "NEW"
+                user_states[chat_id] = "STEP_NAME"
+                send_message(chat_id, "🆕 *New Team Creation Selected!*\n\n📝 *Step 1/5:* Apna *Full Name* likhkar bhejein:")
+            else:
+                user_data[chat_id]["reg_type"] = "JOIN"
+                user_states[chat_id] = "STEP_JOIN_CODE"
+                send_message(chat_id, "🔗 *Join Existing Team Selected!*\n\nLider ka Team Token Number type karke bhejein (Jaise: `#zween2x-01-team-A` ya `01`):")
 
-        if action == "approve":
-            token_number = get_next_token()
-            
-            # Admin Chat Text Update
-            edit_message_text(
-                ADMIN_CHAT_ID, 
-                admin_msg_id, 
-                f"✅ *APPROVED & CONFIRMED!*\n🎟 Token Issued: `{token_number}`"
-            )
-            
-            # Player Message
-            player_msg = (
-                "🎉 *Registration Verified & Confirmed!*\n\n"
-                f"🎟 *Aapka Official Tournament Token:* `{token_number}`\n\n"
-                "Kripya is Token number ko safe rakhein. Room ID & Password match ke waqt share kiya jayega.\n\n"
-                "🏆 All the best - *z.ween2x Management*"
-            )
-            send_message(target_chat_id, player_msg)
+        # Admin Approval Actions
+        elif cb_data.startswith("approve_") or cb_data.startswith("reject_"):
+            action, target_chat_id = cb_data.split("_")
+            target_chat_id = int(target_chat_id)
 
-        elif action == "reject":
-            # Admin Chat Text Update
-            edit_message_text(
-                ADMIN_CHAT_ID, 
-                admin_msg_id, 
-                "❌ *REJECTED BY ADMIN*"
-            )
-            
-            # Player Message
-            player_msg = (
-                "❌ *Registration Verification Failed!*\n\n"
-                "Aapka payment / UTR verify nahi ho paya hai.\n"
-                "• Ya toh aapne UTR galat dala hai, sahi UTR ke sath dobara `/register` karein.\n"
-                "• Ya phir kisi bhi helpline ke liye direct Admin se contact karein: *@zween2xofficial*"
-            )
-            send_message(target_chat_id, player_msg)
+            if action == "approve":
+                reg_type = user_data.get(target_chat_id, {}).get("reg_type", "NEW")
+                
+                if reg_type == "NEW":
+                    token_number = get_new_team_token()
+                else:
+                    join_code = user_data.get(target_chat_id, {}).get("join_code", "")
+                    token_number, status = get_join_team_token(join_code)
+                    if not token_number:
+                        token_number = get_new_team_token() # Fallback if error
 
-        # Answer callback to stop loading spinner
+                edit_message_text(
+                    ADMIN_CHAT_ID, 
+                    admin_msg_id, 
+                    f"✅ *APPROVED & CONFIRMED!*\n🎟 Token Issued: `{token_number}`"
+                )
+                
+                player_msg = (
+                    "🎉 *Registration Verified & Confirmed!*\n\n"
+                    f"🎟 *Aapka Official Tournament Token:* `{token_number}`\n\n"
+                    "📌 *Aapki Team ke baaki members is token number se join kar sakte hain!*\n\n"
+                    "🏆 All the best - *z.ween2x Management*"
+                )
+                send_message(target_chat_id, player_msg)
+
+            elif action == "reject":
+                edit_message_text(
+                    ADMIN_CHAT_ID, 
+                    admin_msg_id, 
+                    "❌ *REJECTED BY ADMIN*"
+                )
+                
+                player_msg = (
+                    "❌ *Registration Verification Failed!*\n\n"
+                    "Aapka payment / UTR verify nahi ho paya hai.\n"
+                    "• Ya toh aapne UTR galat dala hai, sahi UTR ke sath dobara `/register` karein.\n"
+                    "• Ya kisi bhi helpline ke liye direct Admin se contact karein: *@zween2xofficial*"
+                )
+                send_message(target_chat_id, player_msg)
+
         requests.post(f"{TELEGRAM_API_URL}/answerCallbackQuery", json={"callback_query_id": cb_id})
         return "OK", 200
 
-    # 2. STANDARD MESSAGES
+    # 2. MESSAGES HANDLER
     if "message" in data:
         chat_id = data["message"]["chat"]["id"]
         text = data["message"].get("text", "").strip()
@@ -152,30 +213,19 @@ def webhook():
             )
             send_message(chat_id, msg)
 
-        elif text == "/rules":
-            rules = (
-                "📜 *z.ween2x OFFICIAL TOURNAMENT RULEBOOK* 📜\n\n"
-                "📌 *1. REGISTRATION & TEAM SLOTS*\n"
-                "• *Slot Completion Mandatory:* Match tabhi start hoga jab registration ke saare required slots (jaise 128 teams) poore fill ho jayenge.\n\n"
-                "📌 *2. MATCH SCHEDULE & DAILY NOTIFICATION*\n"
-                "• *Daily Schedule:* Subah *8:00 AM* se pehle Telegram / WhatsApp par daily schedule bhej diya jayega.\n\n"
-                "📌 *3. TEAM PRESENCE & SUBSTITUTION RULES*\n"
-                "• *Walkover Policy:* Late aane par direct Lose declare hoga.\n"
-                "• *Minimum Requirement:* 1 player par bhi match khelna padega.\n"
-                "• *Substitutes:* Minimum 2 original players hone zaroori hain, 2 bahar ke chalenge.\n\n"
-                "📌 *4. STRICT ANTI-CHEAT & LEGAL WARNING*\n"
-                "• *Zero Tolerance Policy:* Cheating / Hack karne par saari teams ki fee cheat karne wale ko deni padegi + Police FIR karwayi jayegi.\n\n"
-                "📌 *5. QUALIFICATION & PLATFORM FEE*\n"
-                "• Top 16 Teams ke beech *Best of 3* matches honge (2 wins needed).\n"
-                "• Winner payout me se *23% Platform Charge* deduct hoga.\n\n"
-                "👉 *Contact Support:* @zween2xofficial"
-            )
-            send_message(chat_id, rules)
-
         elif text == "/register":
-            user_states[chat_id] = "STEP_NAME"
+            user_states[chat_id] = "CHOICE_MODE"
             user_data[chat_id] = {}
-            send_message(chat_id, "📝 *Step 1/5:* Apna *Full Name* likhkar bhejein:")
+
+            choice_buttons = {
+                "inline_keyboard": [
+                    [
+                        {"text": "➕ New Team Banayein", "callback_data": "choice_new_team"},
+                        {"text": "🔗 Team Me Join Ho", "callback_data": "choice_join_team"}
+                    ]
+                ]
+            }
+            send_message(chat_id, "❓ *Aap New Team banana chahte hain ya pehle se bani Team me Join hona chahte hain?*", reply_markup=choice_buttons)
 
         elif text == "/cancel":
             user_states[chat_id] = None
@@ -185,7 +235,12 @@ def webhook():
         else:
             state = user_states.get(chat_id)
 
-            if state == "STEP_NAME":
+            if state == "STEP_JOIN_CODE":
+                user_data[chat_id]["join_code"] = text
+                user_states[chat_id] = "STEP_NAME"
+                send_message(chat_id, "📝 *Step 1/5:* Apna *Full Name* likhkar bhejein:")
+
+            elif state == "STEP_NAME":
                 user_data[chat_id]["name"] = text
                 user_states[chat_id] = "STEP_UID"
                 send_message(chat_id, "🎮 *Step 2/5:* Apna *Free Fire Game UID & In-Game Name (IGN)* bhejein:")
@@ -209,8 +264,11 @@ def webhook():
                 user_data[chat_id]["location"] = text
                 user_states[chat_id] = "CHECK_DETAILS"
 
+                reg_mode = "🆕 New Team" if user_data[chat_id].get("reg_type") == "NEW" else f"🔗 Joining Team ({user_data[chat_id].get('join_code')})"
+
                 summary = (
                     "🔍 *Kripya Apni Sabhi Details Check Kar Lein:*\n\n"
+                    f"📌 *Type:* {reg_mode}\n"
                     f"👤 *Name:* {user_data[chat_id]['name']}\n"
                     f"🎮 *Game UID & IGN:* {user_data[chat_id]['uid']}\n"
                     f"✈️ *Telegram:* {user_data[chat_id]['telegram']}\n"
@@ -235,7 +293,6 @@ def webhook():
                 user_data[chat_id]["utr"] = text
                 user_states[chat_id] = None
 
-                # Inline Action Buttons For Admin
                 admin_buttons = {
                     "inline_keyboard": [
                         [
@@ -245,15 +302,18 @@ def webhook():
                     ]
                 }
 
+                reg_type_str = "NEW TEAM LEADER" if user_data[chat_id].get("reg_type") == "NEW" else f"MEMBER JOINING ({user_data[chat_id].get('join_code')})"
+
                 admin_report = (
-                    "📥 *NEW REGISTRATION FOR VERIFICATION*\n\n"
+                    "📥 *NEW TOURNAMENT REGISTRATION*\n\n"
+                    f"🏷 *Category:* `{reg_type_str}`\n"
                     f"👤 *Name:* {user_data[chat_id].get('name')}\n"
                     f"🎮 *Game UID & IGN:* {user_data[chat_id].get('uid')}\n"
                     f"✈️ *Telegram:* {user_data[chat_id].get('telegram')}\n"
                     f"📞 *WhatsApp:* {user_data[chat_id].get('phone')}\n"
                     f"📍 *Location:* {user_data[chat_id].get('location')}\n"
                     f"🧾 *Submitted UTR:* `{text}`\n\n"
-                    "❓ *Kya yeh UTR sahi hai? Niche button daba kar action lein:*"
+                    "❓ *Action Lein:*"
                 )
                 send_message(ADMIN_CHAT_ID, admin_report, reply_markup=admin_buttons)
 
