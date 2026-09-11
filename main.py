@@ -5,18 +5,19 @@ from flask import Flask, request
 BOT_TOKEN = "8913279275:AAE21IA0lEb9ArUH2STvQuuerXeEoLSYdYQ"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# Aapka Personal Telegram Chat ID
-ADMIN_CHAT_ID = "7267123985"
+# Aapka Sahi Telegram Chat ID Update Kar Diya Hai
+ADMIN_CHAT_ID = "8866210749" 
 
 app = Flask(__name__)
 
 user_states = {}
 user_data = {}
 
-# Payment Details
+# Primary Payment UPI Details
 PRIMARY_UPI_ID = "z.ween2x.official@okaxis"
-AIRTEL_UPI_ID = "8120238780@airtel"
-AIRTEL_NUMBER = "8120238780"
+
+# Auto-Generated Dynamic QR Code Link (₹100 Payment)
+PAYMENT_QR_URL = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=upi://pay?pa={PRIMARY_UPI_ID}%26pn=z.ween2x%20Official%26am=100%26cu=INR"
 
 def send_message(chat_id, text, parse_mode="Markdown"):
     url = f"{TELEGRAM_API_URL}/sendMessage"
@@ -25,6 +26,14 @@ def send_message(chat_id, text, parse_mode="Markdown"):
         requests.post(url, json=payload, timeout=5)
     except Exception as e:
         print(f"Send Error: {e}")
+
+def send_photo(chat_id, photo_url, caption):
+    url = f"{TELEGRAM_API_URL}/sendPhoto"
+    payload = {"chat_id": chat_id, "photo": photo_url, "caption": caption, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, json=payload, timeout=5)
+    except Exception as e:
+        print(f"Send Photo Error: {e}")
 
 @app.route('/', methods=['GET'])
 def home():
@@ -42,24 +51,49 @@ def webhook():
             user_data[chat_id] = {}
             msg = (
                 "🏆 *Welcome to z.ween2x Free Fire Tournament!*\n\n"
-                "Organized by: *mp.chouhan*\n\n"
+                "Organized by: *z.ween2x Management*\n\n"
                 "Commands:\n"
                 "👉 /register - Start Registration\n"
-                "👉 /rules - Tournament Official Rules\n"
+                "👉 /rules - Complete Tournament Rulebook\n"
                 "👉 /cancel - Cancel Registration"
             )
             send_message(chat_id, msg)
 
         elif text == "/rules":
             rules = (
-                "📜 *OFFICIAL TOURNAMENT RULES & REGULATIONS* 📜\n\n"
-                "🚫 *1. Hacks & Emulators Ban:* PC / Emulator players strictly prohibited hain. Panel, Hacks, Scripts use karne par instant permanent ban milega.\n\n"
-                "🔑 *2. Room ID & Password:* Room ID aur Password bilkul match timing ke waqt hi share kiya jayega, pehle se nahi diya jayega.\n\n"
-                "🔥 *3. Top 10 Qualification System:* Matches ke bad jo **Top 10 Teams** hongi, unka **3 Times Match (Best of 3)** hoga. Jo team kam se kam **2 Baar Match Jeetegi (2 Wins)**, wohi next stage/final match ke liye qualify karegi.\n\n"
-                "💸 *4. Winning & Platform Fee:* Har Winner Team ki prize money me se **23% Platform Fee & Hidden Charges** deduct kiye jayenge.\n\n"
-                "❓ *5. Help & Support:* Kisi bhi prakar ke query ya sawal ke liye aap Admin ko direct contact kar sakte hain:\n"
+                "📜 *z.ween2x OFFICIAL TOURNAMENT RULEBOOK* 📜\n\n"
+                "📌 *1. REGISTRATION & TEAM SLOTS*\n"
+                "• *Slot Completion Mandatory:* Match tabhi start hoga jab registration ke saare required slots (jaise 128 teams) poore fill ho jayenge. Slots poore hone tak tournament process hold par rahega.\n\n"
+
+                "📌 *2. MATCH SCHEDULE & DAILY NOTIFICATION*\n"
+                "• *Daily Schedule:* Subah *8:00 AM* se pehle aapko Telegram / WhatsApp par official message mil jayega ki aaj kis team ka match kis team se hai aur room ki kya timing rahegi.\n\n"
+
+                "📌 *3. TEAM PRESENCE & SUBSTITUTION RULES*\n"
+                "• *Walkover Policy:* Match time par agar koi team room me nahi aati hai, toh use direct *Lose (Hara hua)* declare kar diya jayega.\n"
+                "• *Minimum Player Requirement:* Agar team ka *1 player* bhi room me aata hai, toh usko match khelna padega (chahe aap Jeeto ya Haro). Single player hone par match cancel nahi hoga.\n"
+                "• *Substitute Players Rule:* Match khelne ke liye squad me kam se kam *2 original registered players* ka hona zaroori hai. Baaki *2 players* aap bahar se kisi ko bhi khila sakte hain.\n\n"
+
+                "📌 *4. STRICT ANTI-CHEAT & LEGAL WARNING*\n"
+                "• *Zero Tolerance Policy:* Match ke dauran koi bhi Hack, Script, Config, Panel, Emulators, ya Cheating use nahi karega.\n"
+                "• *Strict Penalty & Legal Action (FIR):* Agar koi player hack ya cheating karte hue pakda gaya, toh:\n"
+                "  1. Us match me jitni bhi teams khele gi (saare teams) ki *Registration Fee cheat karne wale player ko apni jeb se bharni padegi*.\n"
+                "  2. Us player ke khilaf Fraud aur Cheating ki *Police FIR* karwayi jayegi aur permanent block kiya jayegi.\n\n"
+
+                "📌 *5. ROOM ID & PASSWORD POLICY*\n"
+                "• *On-Time Credentials:* Room ID aur Password bilkul match timing ke waqt hi share kiya jayega. Kisi ko bhi pehle se Room ID nahi di jayegi.\n\n"
+
+                "📌 *6. TOP 16 QUALIFICATION (BEST OF 3 MATCHES)*\n"
+                "• *Head-to-Head 3 Matches:* Tournament ke aage ke stage me jo *16 Teams* hongi, unke aapas me *3 Matches (Best of 3)* honge.\n"
+                "• *Qualification Rule:* Jo team aapas ke 3 matches me se kam se kam *2 Baar Match Jeetegi (2 Wins)*, wahi team next stage/final ke liye aage ready maani jayegi.\n\n"
+
+                "📌 *7. PRIZE MONEY & PLATFORM FEES*\n"
+                "• *23% Deduction:* Har Winner Team ki Prize Money me se *23% Platform Charge & System Maintenance Fee* deduct karke final payout transfer kiya jayega.\n"
+                "• *Non-Refundable:* Registration fee kisi bhi condition me refund nahi hogi.\n\n"
+
+                "📌 *8. HELP & SUPPORT*\n"
+                "• *Direct Admin Contact:* Kisi bhi sawal, dikkat ya query ke liye aap direct contact kar sakte hain:\n"
                 "👉 *Telegram ID:* @zween2xofficial\n\n"
-                "⚖️ *6. Admin Decision:* Tournament Organizer (*mp.chouhan*) ka decision final aur sabhi ke liye mandatory hoga."
+                "☀️ *Aapka din shubh ho! Dhanyawad - z.ween2x Management*"
             )
             send_message(chat_id, rules)
 
@@ -120,16 +154,15 @@ def webhook():
 
             elif state == "CHECK_DETAILS" and text.upper() == "PAY":
                 user_states[chat_id] = "STEP_UTR"
-                payment_instructions = (
+                caption = (
                     "💰 *Registration Fee Payment (₹100)*\n\n"
                     "Aap niche diye gaye tareeqon se ₹100 pay karein:\n\n"
-                    f"🆔 *UPI ID:* `{PRIMARY_UPI_ID}`\n"
-                    f"🏦 *Airtel UPI:* `{AIRTEL_UPI_ID}`\n"
-                    f"📲 *Airtel Mobile Transfer:* `{AIRTEL_NUMBER}`\n\n"
+                    "📷 *1. QR Code:* Upar diye gaye QR Code ko kisi bhi UPI App (PhonePe / GPay / Paytm) se scan karke pay karein.\n\n"
+                    f"🆔 *2. UPI ID:* `{PRIMARY_UPI_ID}` (UPI ID par direct payment karein)\n\n"
                     "------------------------------------\n"
                     "Payment hone ke baad, apna **12-Digit UTR / Transaction ID** yahan chat me type karke bhejein:"
                 )
-                send_message(chat_id, payment_instructions)
+                send_photo(chat_id, PAYMENT_QR_URL, caption)
 
             elif state == "STEP_UTR":
                 user_data[chat_id]["utr"] = text
@@ -146,6 +179,7 @@ def webhook():
                     f"🆔 *Player Telegram Chat ID:* `{chat_id}`\n\n"
                     "📌 *Action Required:* Payment & UTR verify karein aur player ko manual token bhej dein!"
                 )
+                # Ab yeh message direct AAPKE (8866210749) paas aayega!
                 send_message(ADMIN_CHAT_ID, admin_report)
 
                 player_msg = (
