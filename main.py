@@ -8,12 +8,13 @@ from datetime import datetime, timezone, timedelta
 from flask import Flask, request
 
 # --- ENCODED TOKENS & KEYS ---
-ENCODED_BOT_TOKEN = "ODkxMzI3OTI3NTpBQUUyMUlBMDFFYjlBclVIMlN0dlF1dWVyWGVFb0xTWWRZUQ=="
+ENCODED_BOT_TOKEN = "ODkxMzI3OTI3NTpBQUgzV1J
+oWnF0V21pN1NKVjVNZ2lfMWxRX2hudlNDNWpn"
 ENCODED_GEMINI_KEY = "QVEuQWI4Uk42THVwM2t1V1dTU2lVcVd6U3otZHp1aG5RTWxWNTJ2bnB5bmJsSE9kWWE1NXc="
 
 # Decode Credentials Safely
 try:
-    BOT_TOKEN = base64.b64decode(ENCODED_BOT_TOKEN).decode("utf-8").strip()
+    BOT_TOKEN = base64.b64decode(ENCODED_BOT_TOKEN.replace("\n", "").replace(" ", "")).decode("utf-8").strip()
 except Exception:
     BOT_TOKEN = ""
 
