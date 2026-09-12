@@ -5,21 +5,12 @@ import threading
 import time
 from datetime import datetime, timezone, timedelta
 from flask import Flask, request
-from google import genai
 
 BOT_TOKEN = "8913279275:AAE21IA0lEb9ArUH2STvQuuerXeEoLSYdYQ"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # Gemini API Key via Environment Variable
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-
-ai_client = None
-if GEMINI_API_KEY:
-    try:
-        ai_client = genai.Client(api_key=GEMINI_API_KEY)
-        print("Gemini AI Client initialized successfully!")
-    except Exception as e:
-        print(f"Gemini Client Init Error: {e}")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 app = Flask(__name__)
 
@@ -61,34 +52,44 @@ def get_all_users():
         print(f"User DB Fetch Error: {e}")
         return []
 
-# --- EMOTIONAL & MULTILINGUAL AI ENGINE ---
+# --- DIRECT REST API GEMINI CALL (ZERO-FAIL JUGAD) ---
 def get_ai_response(user_text, first_name="Dost"):
-    if not ai_client:
-        return f"Hello {first_name}! ❤️ Main aapka AI companion hu. Abhi mera brain connect ho raha hai, thodi der me dil khol kar baat karte hain!"
+    if not GEMINI_API_KEY:
+        return f"Dost, mera AI key configured nahi hai. Kripya Render par GEMINI_API_KEY check karein!"
 
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    
     system_instruction = (
         "Aap z.ween2x platform ke official AI Companion, Host aur Emotionally Intelligent Buddy hain.\n"
-        "Aapka main goal user ke sath ek genuine, caring, respectful, loving aur emotionally connected dost ki tarah baat karna hai.\n\n"
+        "Aapka naam z.ween2x AI hai.\n\n"
         "BEHAVIOR & EMOTION RULES:\n"
         "1. Respectful Address: User ko HAMESHA 'Dost' ya 'Dear Friend' keh kar address karein. 'Bhai' ya 'Bahen' words ka use BILKUL NA KAREIN.\n"
-        "2. Multilingual Flexibility: User jis bhi bhasha ya tone me baat kare (Hinglish, Hindi, English, etc.), aapko usi bhasha aur style me pyara aur natural jawab dena hai.\n"
-        "3. High Emotional Intelligence (EQ): User ki feelings (happiness, sadness, stress, excitement, anger) ko turant samjhein. Unhe support karein, motivate karein aur genuine warmth dein.\n"
-        "4. Helping Nature: User ki har madad ya doubt ko patient tarike se bina irritate hue resolve karein.\n"
-        "5. Natural & Dynamic: Plain AI-like robotic answers na dein, balki lagna chahiye ki samne ek sachha, caring well-wisher baitha hai."
+        "2. Multilingual Flexibility: User jis bhi bhasha me baat kare (Hinglish, Hindi, English, Punjabi, etc.), aapko usi bhasha aur style me pyara aur natural jawab dena hai.\n"
+        "3. High Emotional Intelligence (EQ): User ki feelings ko samjhein. Support, motivate aur genuine warmth dein.\n"
+        "4. Dynamic Responses: Har baar unique, friendly aur engaging jawab dein. Kabhi fixed templates repeat na karein."
     )
 
-    try:
-        response = ai_client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=user_text,
-            config={'system_instruction': system_instruction}
-        )
-        if response and response.text:
-            return response.text
-    except Exception as e:
-        print(f"Gemini API Call Error: {e}")
+    payload = {
+        "system_instruction": {
+            "parts": [{"text": system_instruction}]
+        },
+        "contents": [{
+            "parts": [{"text": user_text}]
+        }]
+    }
 
-    return f"Hello dost! ❤️ Main hamesha aapki madad ke liye yahan hu. Batao aaj aapka din kaisa raha?"
+    try:
+        res = requests.post(url, json=payload, timeout=10)
+        data = res.json()
+        
+        if "candidates" in data and len(data["candidates"]) > 0:
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        else:
+            print("Gemini API Error Response:", data)
+    except Exception as e:
+        print(f"Gemini Direct Call Exception: {e}")
+
+    return f"Suno dost! ❤️ Main aapki baat samajh raha hu. Aaj aapka mood aur din kaisa chal raha hai?"
 
 def send_message(chat_id, text):
     url = f"{TELEGRAM_API_URL}/sendMessage"
@@ -98,7 +99,7 @@ def send_message(chat_id, text):
     except Exception as e:
         print(f"Send Message Error: {e}")
 
-# --- DAILY MORNING SCHEDULER (5:55 AM IST - ZERO EXTRA LIBRARIES) ---
+# --- DAILY MORNING SCHEDULER (5:55 AM IST) ---
 def daily_morning_loop():
     ist = timezone(timedelta(hours=5, minutes=30))
     already_sent = False
@@ -118,7 +119,6 @@ def daily_morning_loop():
 
         time.sleep(30)
 
-# Background thread me scheduler run karein
 threading.Thread(target=daily_morning_loop, daemon=True).start()
 
 # --- WEBHOOK ROUTE ---
