@@ -1,11 +1,11 @@
 import os
 import sqlite3
 import requests
-import datetime
-import pytz
+import threading
+import time
+from datetime import datetime, timezone, timedelta
 from flask import Flask, request
 from google import genai
-from apscheduler.schedulers.background import BackgroundScheduler
 
 BOT_TOKEN = "8913279275:AAE21IA0lEb9ArUH2STvQuuerXeEoLSYdYQ"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
@@ -98,17 +98,28 @@ def send_message(chat_id, text):
     except Exception as e:
         print(f"Send Message Error: {e}")
 
-# --- DAILY MORNING SCHEDULER (5:55 AM IST) ---
-def send_morning_wishes():
-    users = get_all_users()
-    for chat_id, first_name in users:
-        name = first_name if first_name else "Dost"
-        msg = f"Happiee morning {name}! ☀️🌻\n\nNaye din ki nayi shuruaat Mubarak ho dost! Aaj ka din aapke liye bohot saari khushiyaan, success aur energy le kar aaye. Muskurate rahiye aur life me aage badhte rahiye! ❤️✨"
-        send_message(chat_id, msg)
+# --- DAILY MORNING SCHEDULER (5:55 AM IST - ZERO EXTRA LIBRARIES) ---
+def daily_morning_loop():
+    ist = timezone(timedelta(hours=5, minutes=30))
+    already_sent = False
 
-scheduler = BackgroundScheduler(timezone=pytz.timezone('Asia/Kolkata'))
-scheduler.add_job(send_morning_wishes, 'cron', hour=5, minute=55)
-scheduler.start()
+    while True:
+        now = datetime.now(ist)
+        if now.hour == 5 and now.minute == 55:
+            if not already_sent:
+                users = get_all_users()
+                for chat_id, first_name in users:
+                    name = first_name if first_name else "Dost"
+                    msg = f"Happiee morning {name}! ☀️🌻\n\nNaye din ki nayi shuruaat Mubarak ho dost! Aaj ka din aapke liye bohot saari khushiyaan, success aur energy le kar aaye. Muskurate rahiye aur life me aage badhte rahiye! ❤️✨"
+                    send_message(chat_id, msg)
+                already_sent = True
+        else:
+            already_sent = False
+
+        time.sleep(30)
+
+# Background thread me scheduler run karein
+threading.Thread(target=daily_morning_loop, daemon=True).start()
 
 # --- WEBHOOK ROUTE ---
 @app.route('/', methods=['GET'])
