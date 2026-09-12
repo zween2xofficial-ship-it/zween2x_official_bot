@@ -3,7 +3,7 @@ import sqlite3
 import requests
 from flask import Flask, request
 
-# Read credentials safely from Render Environment Variables
+# Render Environment Variables se keys read karein
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
@@ -43,7 +43,7 @@ def save_user(chat_id, first_name):
 # --- GEMINI AI FUNCTION ---
 def get_gemini_response(prompt_text):
     if not GEMINI_API_KEY:
-        return "System notice: API key missing."
+        return "System notice: GEMINI_API_KEY missing in Render environment."
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
@@ -59,13 +59,16 @@ def get_gemini_response(prompt_text):
             data = response.json()
             return data['candidates'][0]['content']['parts'][0]['text']
         else:
+            print(f"Gemini API Error: {response.text}")
             return "Main abhi thoda busy hoon, kripya thodi der baad dobara try karein!"
-    except Exception:
+    except Exception as e:
+        print(f"Request Exception: {e}")
         return "Connection me thodi dikkat aa rahi hai."
 
 # --- TELEGRAM MESSAGE SENDER ---
 def send_telegram_message(chat_id, text):
     if not BOT_TOKEN:
+        print("BOT_TOKEN missing in Render environment")
         return
     url = f"{TELEGRAM_API_URL}/sendMessage"
     payload = {
@@ -73,7 +76,8 @@ def send_telegram_message(chat_id, text):
         "text": text
     }
     try:
-        requests.post(url, json=payload, timeout=10)
+        res = requests.post(url, json=payload, timeout=10)
+        print("Send response:", res.status_code, res.text)
     except Exception as e:
         print(f"Failed to send message: {e}")
 
