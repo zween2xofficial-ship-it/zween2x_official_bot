@@ -1,30 +1,13 @@
 import os
-import base64
 import sqlite3
 import requests
-import threading
-import time
-from datetime import datetime, timezone, timedelta
 from flask import Flask, request
 
-# --- ENCODED TOKENS & KEYS ---
-ENCODED_BOT_TOKEN = "ODkxMzI3OTI3NTpBQUgzV1JvWnF0V21pN1NKVjVNZ2lfMWxRX2hudlNDNWpn"
-ENCODED_GEMINI_KEY = "QVEuQWI4Uk42THVwM2t1V1dTU2lVcVd6U3otZHp1aG5RTWxWNTJ2bnB5bmJsSE9kWWE1NXc="
-
-# Decode Credentials Safely
-try:
-    BOT_TOKEN = base64.b64decode(ENCODED_BOT_TOKEN).decode("utf-8").strip()
-except Exception:
-    BOT_TOKEN = ""
+# Read credentials safely from Render Environment Variables
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
-
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-if not GEMINI_API_KEY and ENCODED_GEMINI_KEY:
-    try:
-        GEMINI_API_KEY = base64.b64decode(ENCODED_GEMINI_KEY).decode("utf-8").strip()
-    except Exception as e:
-        print(f"Error decoding API Key: {e}")
 
 app = Flask(__name__)
 
@@ -76,16 +59,13 @@ def get_gemini_response(prompt_text):
             data = response.json()
             return data['candidates'][0]['content']['parts'][0]['text']
         else:
-            print(f"Gemini API Error: {response.text}")
             return "Main abhi thoda busy hoon, kripya thodi der baad dobara try karein!"
-    except Exception as e:
-        print(f"Request Exception: {e}")
+    except Exception:
         return "Connection me thodi dikkat aa rahi hai."
 
 # --- TELEGRAM MESSAGE SENDER ---
 def send_telegram_message(chat_id, text):
     if not BOT_TOKEN:
-        print("Bot token missing")
         return
     url = f"{TELEGRAM_API_URL}/sendMessage"
     payload = {
@@ -108,14 +88,12 @@ def webhook():
             first_name = message["chat"].get("first_name", "User")
             text = message.get("text", "")
 
-            # Save user ID
             save_user(chat_id, first_name)
 
             if text == "/start":
                 welcome_msg = f"Namaste {first_name}! Main z.ween2x ka AI Assistant hoon. Aap mujhse koi bhi sawal pooch sakte hain!"
                 send_telegram_message(chat_id, welcome_msg)
             elif text:
-                # Get response from Gemini AI
                 ai_reply = get_gemini_response(text)
                 send_telegram_message(chat_id, ai_reply)
 
