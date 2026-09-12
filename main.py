@@ -9,7 +9,7 @@ from flask import Flask, request
 BOT_TOKEN = "8913279275:AAE21IA0lEb9ArUH2STvQuuerXeEoLSYdYQ"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# Gemini API Key via Environment Variable
+ENCODED_GEMINI_KEY = "QVEuQWI4Uk42THVwM2t1V1dTU2lVcVd6U3otZHp1aG5RTWxWNTJ2bnB5bmJsSE9kWWE1NXc="
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 app = Flask(__name__)
