@@ -1,4 +1,5 @@
 import os
+import base64
 import sqlite3
 import requests
 import threading
@@ -6,15 +7,23 @@ import time
 from datetime import datetime, timezone, timedelta
 from flask import Flask, request
 
-BOT_TOKEN = "8913279275:AAE21IA0lEb9ArUH2STvQuuerXeEoLSYdYQ"
+# --- TOKENS & KEYS ---
+BOT_TOKEN = "8913279275:AAE21IA01Eb9ArUH2STvQuuerXeEoLSYdYQ"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
+# Encoded Gemini Key
 ENCODED_GEMINI_KEY = "QVEuQWI4Uk42THVwM2t1V1dTU2lVcVd6U3otZHp1aG5RTWxWNTJ2bnB5bmJsSE9kWWE1NXc="
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
+if not GEMINI_API_KEY and ENCODED_GEMINI_KEY:
+    try:
+        GEMINI_API_KEY = base64.b64decode(ENCODED_GEMINI_KEY).decode("utf-8").strip()
+    except Exception as e:
+        print(f"Error decoding API Key: {e}")
+
 app = Flask(__name__)
 
-# --- DATABASE FOR USER CHAT IDS ---
+# --- DATABASE SETUP ---
 def init_db():
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
@@ -31,126 +40,79 @@ def init_db():
 init_db()
 
 def save_user(chat_id, first_name):
-    try:
-        conn = sqlite3.connect("users.db")
-        cursor = conn.cursor()
-        cursor.execute("INSERT OR REPLACE INTO users (chat_id, first_name) VALUES (?, ?)", (chat_id, first_name))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"User DB Save Error: {e}")
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO users (chat_id, first_name, last_active)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(chat_id) DO UPDATE SET
+            first_name=excluded.first_name,
+            last_active=CURRENT_TIMESTAMP
+    """, (chat_id, first_name))
+    conn.commit()
+    conn.close()
 
-def get_all_users():
-    try:
-        conn = sqlite3.connect("users.db")
-        cursor = conn.cursor()
-        cursor.execute("SELECT chat_id, first_name FROM users")
-        users = cursor.fetchall()
-        conn.close()
-        return users
-    except Exception as e:
-        print(f"User DB Fetch Error: {e}")
-        return []
-
-# --- DIRECT REST API GEMINI CALL (ZERO-FAIL JUGAD) ---
-def get_ai_response(user_text, first_name="Dost"):
+# --- GEMINI AI FUNCTION ---
+def get_gemini_response(prompt_text):
     if not GEMINI_API_KEY:
-        return f"Dost, mera AI key configured nahi hai. Kripya Render par GEMINI_API_KEY check karein!"
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+        return "System notice: API key missing."
     
-    system_instruction = (
-        "Aap z.ween2x platform ke official AI Companion, Host aur Emotionally Intelligent Buddy hain.\n"
-        "Aapka naam z.ween2x AI hai.\n\n"
-        "BEHAVIOR & EMOTION RULES:\n"
-        "1. Respectful Address: User ko HAMESHA 'Dost' ya 'Dear Friend' keh kar address karein. 'Bhai' ya 'Bahen' words ka use BILKUL NA KAREIN.\n"
-        "2. Multilingual Flexibility: User jis bhi bhasha me baat kare (Hinglish, Hindi, English, Punjabi, etc.), aapko usi bhasha aur style me pyara aur natural jawab dena hai.\n"
-        "3. High Emotional Intelligence (EQ): User ki feelings ko samjhein. Support, motivate aur genuine warmth dein.\n"
-        "4. Dynamic Responses: Har baar unique, friendly aur engaging jawab dein. Kabhi fixed templates repeat na karein."
-    )
-
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
     payload = {
-        "system_instruction": {
-            "parts": [{"text": system_instruction}]
-        },
         "contents": [{
-            "parts": [{"text": user_text}]
+            "parts": [{"text": prompt_text}]
         }]
     }
-
+    
     try:
-        res = requests.post(url, json=payload, timeout=10)
-        data = res.json()
-        
-        if "candidates" in data and len(data["candidates"]) > 0:
-            return data["candidates"][0]["content"]["parts"][0]["text"]
+        response = requests.post(url, json=payload, headers=headers, timeout=15)
+        if response.status_code == 200:
+            data = response.json()
+            return data['candidates'][0]['content']['parts'][0]['text']
         else:
-            print("Gemini API Error Response:", data)
+            print(f"Gemini API Error: {response.text}")
+            return "Main abhi thoda busy hoon, kripya thodi der baad dobara try karein!"
     except Exception as e:
-        print(f"Gemini Direct Call Exception: {e}")
+        print(f"Request Exception: {e}")
+        return "Connection me thodi dikkat aa rahi hai."
 
-    return f"Suno dost! ❤️ Main aapki baat samajh raha hu. Aaj aapka mood aur din kaisa chal raha hai?"
-
-def send_message(chat_id, text):
+# --- TELEGRAM MESSAGE SENDER ---
+def send_telegram_message(chat_id, text):
     url = f"{TELEGRAM_API_URL}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text}
+    payload = {
+        "chat_id": chat_id,
+        "text": text
+    }
     try:
-        requests.post(url, json=payload, timeout=5)
+        requests.post(url, json=payload, timeout=10)
     except Exception as e:
-        print(f"Send Message Error: {e}")
-
-# --- DAILY MORNING SCHEDULER (5:55 AM IST) ---
-def daily_morning_loop():
-    ist = timezone(timedelta(hours=5, minutes=30))
-    already_sent = False
-
-    while True:
-        now = datetime.now(ist)
-        if now.hour == 5 and now.minute == 55:
-            if not already_sent:
-                users = get_all_users()
-                for chat_id, first_name in users:
-                    name = first_name if first_name else "Dost"
-                    msg = f"Happiee morning {name}! ☀️🌻\n\nNaye din ki nayi shuruaat Mubarak ho dost! Aaj ka din aapke liye bohot saari khushiyaan, success aur energy le kar aaye. Muskurate rahiye aur life me aage badhte rahiye! ❤️✨"
-                    send_message(chat_id, msg)
-                already_sent = True
-        else:
-            already_sent = False
-
-        time.sleep(30)
-
-threading.Thread(target=daily_morning_loop, daemon=True).start()
+        print(f"Failed to send message: {e}")
 
 # --- WEBHOOK ROUTE ---
-@app.route('/', methods=['GET'])
-def home():
-    return "z.ween2x AI Emotional Companion Engine Active!"
-
-@app.route(f'/{BOT_TOKEN}', methods=['POST'])
+@app.route("/", methods=["POST", "GET"])
 def webhook():
-    data = request.get_json()
-    if not data or "message" not in data:
+    if request.method == "POST":
+        data = request.get_json()
+        if data and "message" in data:
+            message = data["message"]
+            chat_id = message["chat"]["id"]
+            first_name = message["chat"].get("first_name", "User")
+            text = message.get("text", "")
+
+            # Save user ID
+            save_user(chat_id, first_name)
+
+            if text == "/start":
+                welcome_msg = f"Namaste {first_name}! Main aapka AI Assistant hoon. Aap mujhse koi bhi sawal pooch sakte hain!"
+                send_telegram_message(chat_id, welcome_msg)
+            elif text:
+                # Get response from Gemini AI
+                ai_reply = get_gemini_response(text)
+                send_telegram_message(chat_id, ai_reply)
+
         return "OK", 200
+    return "Bot is running perfectly!", 200
 
-    chat_id = data["message"]["chat"]["id"]
-    first_name = data["message"]["chat"].get("first_name", "Dost")
-    text = data["message"].get("text", "").strip()
-
-    save_user(chat_id, first_name)
-
-    if text == "/start":
-        msg = (
-            f"Happiee Welcome {first_name}! ❤️✨\n\n"
-            "Main aapka personal AI Companion hu. Main aapki baatein samajh sakta hu, aapki help kar sakta hu aur aapka ek pyara dost ban kar har shubh-dukh me aapke sath reh sakta hu!\n\n"
-            "Dil khol kar kuch bhi puchiye ya baat karein dost! 👇"
-        )
-        send_message(chat_id, msg)
-    else:
-        ai_reply = get_ai_response(text, first_name)
-        send_message(chat_id, ai_reply)
-
-    return "OK", 200
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
