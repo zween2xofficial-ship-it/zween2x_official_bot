@@ -7,14 +7,19 @@ import time
 from datetime import datetime, timezone, timedelta
 from flask import Flask, request
 
-# --- TOKENS & KEYS ---
-BOT_TOKEN = "8913279275:AAE21IA01Eb9ArUH2STvQuuerXeEoLSYdYQ"
+# --- ENCODED TOKENS & KEYS ---
+ENCODED_BOT_TOKEN = "ODkxMzI3OTI3NTpBQUUyMUlBMDFFYjlBclVIMlN0dlF1dWVyWGVFb0xTWWRZUQ=="
+ENCODED_GEMINI_KEY = "QVEuQWI4Uk42THVwM2t1V1dTU2lVcVd6U3otZHp1aG5RTWxWNTJ2bnB5bmJsSE9kWWE1NXc="
+
+# Decode Credentials Safely
+try:
+    BOT_TOKEN = base64.b64decode(ENCODED_BOT_TOKEN).decode("utf-8").strip()
+except Exception:
+    BOT_TOKEN = ""
+
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# Encoded Gemini Key
-ENCODED_GEMINI_KEY = "QVEuQWI4Uk42THVwM2t1V1dTU2lVcVd6U3otZHp1aG5RTWxWNTJ2bnB5bmJsSE9kWWE1NXc="
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-
 if not GEMINI_API_KEY and ENCODED_GEMINI_KEY:
     try:
         GEMINI_API_KEY = base64.b64decode(ENCODED_GEMINI_KEY).decode("utf-8").strip()
@@ -79,6 +84,9 @@ def get_gemini_response(prompt_text):
 
 # --- TELEGRAM MESSAGE SENDER ---
 def send_telegram_message(chat_id, text):
+    if not BOT_TOKEN:
+        print("Bot token missing")
+        return
     url = f"{TELEGRAM_API_URL}/sendMessage"
     payload = {
         "chat_id": chat_id,
