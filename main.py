@@ -11,7 +11,7 @@ TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 ADMIN_CHAT_ID = "8866210749" 
 
-# Gemini API Direct Setup
+# Gemini API via Environment Variable
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 ai_client = None
@@ -164,13 +164,18 @@ def get_ai_response(user_text):
         return "Haan bhai, z.ween2x official bot par aapka swagat hai! Registration ke liye `/register` type karein."
 
     system_instruction = (
-        "Aap z.ween2x Free Fire Esports Platform ke smart AI assistant hain. "
-        "User se friendly, polite aur natural Hinglish me ek insaan ki tarah baat karein. "
-        "Aap user ke kisi bhi sawaal ka natural aur helpful jawab denge. Aapko z.ween2x tournament ki details pata hain:\n"
-        "1. Strictly 128 teams cap aur 4 players per team limit hai.\n"
-        "2. Registration fee ₹100 hai aur secure team token `#zween2x-0001-...` milta hai.\n"
-        "3. User `/register` karke new team bana sakta hai ya token se join ho sakta hai.\n"
-        "Chote, friendly aur direct jawab dein."
+        "Aap z.ween2x Free Fire Esports Platform ke official AI Companion aur Assistant hain.\n"
+        "Aapka main role user ke sath ek genuine, respectful aur empathetic insaan ki tarah connect hona hai.\n\n"
+        "BEHAVIOR RULES:\n"
+        "1. Friendly & Supportive Tone: Natural Hinglish me baat karein. Gamer buddy ki tarah behave karein.\n"
+        "2. Emotional Intelligence: Agar user pareshan hai, gusse me hai ya confused hai, toh unhe pehle emotionally calm karein, patience rakhein aur unhe sahi rasta batayein.\n"
+        "3. Trust & Security: User ko z.ween2x platform ki genuineness aur transparency ka poora bharosa dawayein.\n"
+        "4. Knowledge Base:\n"
+        "   - Registration Fee: ₹100 per team.\n"
+        "   - Team Limit: Strict 128 Teams Cap (4 players per squad).\n"
+        "   - Process: User `/register` command dekar apni team register kar sakta hai ya Secret Token se join ho sakta hai.\n"
+        "   - Admin Support: Direct contact @zween2xofficial.\n"
+        "Jawab warm, clear aur concise rakhein."
     )
     
     try:
@@ -182,9 +187,9 @@ def get_ai_response(user_text):
         if response and response.text:
             return response.text
     except Exception as e:
-        print(f"Gemini API Call Error Details: {e}")
+        print(f"Gemini API Call Error: {e}")
         
-    return "Haan bhai! Batayein main z.ween2x tournament ke baare me kya help karu aapki? Registration ke liye `/register` likhein."
+    return "Haan bhai! Main aapki kya help kar sakta hu? Agar registration karna ho toh `/register` type karein ya mujhse koi bhi sawaal poochein."
 
 def send_message(chat_id, text, reply_markup=None, parse_mode="Markdown"):
     url = f"{TELEGRAM_API_URL}/sendMessage"
@@ -217,7 +222,7 @@ def edit_message_text(chat_id, message_id, text):
 # --- WEBHOOK ROUTE ---
 @app.route('/', methods=['GET'])
 def home():
-    return "z.ween2x 128-Team Secure Tournament Engine Active!"
+    return "z.ween2x AI Gaming Companion Engine Active!"
 
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def webhook():
@@ -225,7 +230,7 @@ def webhook():
     if not data:
         return "OK", 200
 
-    # 1. CALLBACK QUERY (BUTTON CLICKS)
+    # 1. CALLBACK QUERY
     if "callback_query" in data:
         cb = data["callback_query"]
         cb_id = cb["id"]
@@ -277,7 +282,6 @@ def webhook():
                         send_message(target_chat_id, "❌ Registration Failed! Yeh team pehle se full hai (4/4 Players Joined).")
                         return "OK", 200
 
-                # Save Player Data
                 conn = sqlite3.connect("tournament.db")
                 cursor = conn.cursor()
                 cursor.execute("SELECT team_id FROM teams WHERE base_token = ?", (token,))
@@ -322,12 +326,13 @@ def webhook():
             user_states[chat_id] = None
             user_data[chat_id] = {}
             msg = (
-                "🏆 *Welcome to z.ween2x Free Fire Tournament Engine!*\n\n"
-                "Commands:\n"
-                "👉 /register - Start Registration Process\n"
-                "👉 /rules - Complete Tournament Rules\n"
-                "👉 /cancel - Cancel Current Process\n\n"
-                "💬 *Aap mujhse tournament ya game ke baare me koi bhi sawaal pooch sakte hain!*"
+                "👋 *Welcome to z.ween2x Esports Platform!*\n\n"
+                "Main aapka personal gaming host aur AI buddy hu. Main yahan aapki har tarah se help karne ke liye ready hu!\n\n"
+                "📌 *Quick Commands:*\n"
+                "👉 `/register` - Tournament Registration\n"
+                "👉 `/rules` - Official Rulebook\n"
+                "👉 `/cancel` - Cancel Process\n\n"
+                "💬 Aap mujhse tournament, match timings, ya kisi bhi topic par natural tarike se baat kar sakte hain!"
             )
             send_message(chat_id, msg)
 
@@ -341,7 +346,7 @@ def webhook():
             conn.close()
 
             stats_msg = (
-                "📊 *z.ween2x LIVE TOURNAMENT STATS*\n\n"
+                "📊 *z.ween2x LIVE STATS*\n\n"
                 f"🛡 *Total Teams Registered:* `{total_teams} / 128`\n"
                 f"👤 *Total Players Verified:* `{total_players} / 512`\n"
             )
@@ -350,10 +355,11 @@ def webhook():
         elif text == "/rules":
             rules = (
                 "📜 *z.ween2x TOURNAMENT RULEBOOK*\n\n"
-                "• Strict 128 Teams Cap (Max 4 Players Per Team).\n"
-                "• Subah 8:00 AM se pehle daily match updates.\n"
-                "• Strict Anti-Cheat & Legal FIR policy on Hacks.\n"
-                "💬 Support: @zween2xofficial"
+                "1. Strict 128 Teams Cap (Max 4 Players Per Squad).\n"
+                "2. Registration Fee: ₹100 per team.\n"
+                "3. Match Details Subah 8:00 AM se pehle share ki jayengi.\n"
+                "4. Emulators and Hackers strictly prohibited.\n\n"
+                "💬 Need help? Contact Admin: *@zween2xofficial*"
             )
             send_message(chat_id, rules)
 
@@ -374,25 +380,23 @@ def webhook():
         elif text == "/cancel":
             user_states[chat_id] = None
             user_data[chat_id] = {}
-            send_message(chat_id, "❌ Process cancel kar diya gaya hai.")
+            send_message(chat_id, "❌ Process cancel kar diya gaya hai. Aap mujhse koi bhi baat kar sakte hain!")
 
         else:
             state = user_states.get(chat_id)
 
-            # STEP: JOIN TEAM TOKEN ENTER
             if state == "STEP_JOIN_CODE":
                 squad = get_squad_details(text)
                 if not squad:
-                    send_message(chat_id, "❌ *Aesi koi team nahi hai ya invalid token code.*\n\nKripya sahi token code dobara enter karein:")
+                    send_message(chat_id, "❌ *Invalid Token Code.*\n\nKripya sahi token code re-enter karein:")
                 elif squad['members_count'] >= 4:
-                    send_message(chat_id, "❌ *Yeh team pehle se full hai (4/4 Players Joined).* Naye players add nahi ho sakte.")
+                    send_message(chat_id, "❌ *Yeh team pehle se full hai (4/4 Players).* Naye players add nahi ho sakte.")
                     user_states[chat_id] = None
                 else:
                     user_data[chat_id]["join_code"] = text
                     user_states[chat_id] = "STEP_NAME"
                     send_message(chat_id, "✅ *Team Found!*\n\n📝 *Step 1/5:* Apna *Full Name* likhkar bhejein:")
 
-            # ADMIN LOOKUP TOKEN
             elif text.startswith("#zween2x-"):
                 if str(chat_id) != ADMIN_CHAT_ID:
                     send_message(chat_id, "❌ *Invalid Token Code!*")
@@ -402,9 +406,9 @@ def webhook():
                         send_message(chat_id, "❌ *Aesi koi team nahi hai!*")
                     else:
                         msg = (
-                            f"🛡 *ADMIN FULL TEAM DATA (Team #{squad['team_id']:04d})*\n"
+                            f"🛡 *ADMIN SQUAD DATA (Team #{squad['team_id']:04d})*\n"
                             f"🎟 *Token:* `{squad['base_token']}`\n"
-                            f"👥 *Members Joined:* `{squad['members_count']} / 4`\n\n"
+                            f"👥 *Members:* `{squad['members_count']} / 4`\n\n"
                         )
                         for idx, p in enumerate(squad['players'], 1):
                             msg += (
@@ -413,7 +417,7 @@ def webhook():
                                 f"   ✈️ Telegram: {p[3]}\n"
                                 f"   📞 Phone: `{p[4]}`\n"
                                 f"   📍 Location: {p[5]}\n"
-                                f"   🕒 Registered On: `{p[6]}`\n\n"
+                                f"   🕒 Registered: `{p[6]}`\n\n"
                             )
                         send_message(chat_id, msg)
 
@@ -444,10 +448,10 @@ def webhook():
                 reg_mode = "🆕 New Team Leader" if user_data[chat_id].get("reg_type") == "NEW" else f"🔗 Joining Team Member"
 
                 summary = (
-                    "🔍 *Kripya Apni Details Check Kar Lein:*\n\n"
+                    "🔍 *Details Verification:*\n\n"
                     f"📌 *Role:* {reg_mode}\n"
                     f"👤 *Name:* {user_data[chat_id]['name']}\n"
-                    f"🎮 *Game UID & IGN:* {user_data[chat_id]['uid']}\n"
+                    f"🎮 *Game UID:* {user_data[chat_id]['uid']}\n"
                     f"✈️ *Telegram:* {user_data[chat_id]['telegram']}\n"
                     f"📞 *WhatsApp:* {user_data[chat_id]['phone']}\n"
                     f"📍 *Location:* {user_data[chat_id]['location']}\n\n"
@@ -468,7 +472,7 @@ def webhook():
 
             elif state == "STEP_UTR":
                 if is_utr_duplicate(text):
-                    send_message(chat_id, "⚠️ *Yeh UTR pehle se kisi aur registration me use ho chuka hai!* Sahi UTR re-enter karein:")
+                    send_message(chat_id, "⚠️ *Yeh UTR pehle se registered hai!* Sahi UTR enter karein:")
                 else:
                     user_data[chat_id]["utr"] = text
                     user_states[chat_id] = None
@@ -488,7 +492,7 @@ def webhook():
                         "📥 *NEW TOURNAMENT REGISTRATION*\n\n"
                         f"🏷 *Category:* `{reg_type_str}`\n"
                         f"👤 *Name:* {user_data[chat_id].get('name')}\n"
-                        f"🎮 *Game UID & IGN:* {user_data[chat_id].get('uid')}\n"
+                        f"🎮 *Game UID:* {user_data[chat_id].get('uid')}\n"
                         f"✈️ *Telegram:* {user_data[chat_id].get('telegram')}\n"
                         f"📞 *WhatsApp:* {user_data[chat_id].get('phone')}\n"
                         f"📍 *Location:* {user_data[chat_id].get('location')}\n"
@@ -503,7 +507,7 @@ def webhook():
                     )
                     send_message(chat_id, player_msg)
 
-            # AI CHAT ENGINE
+            # AI EMOTIONAL & INTELLIGENT CHAT ENGINE
             else:
                 ai_reply = get_ai_response(text)
                 send_message(chat_id, ai_reply, parse_mode=None)
