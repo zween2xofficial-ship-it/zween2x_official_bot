@@ -3,8 +3,10 @@ import random
 import string
 import logging
 import sqlite3
+import threading
 import urllib.parse
 from datetime import datetime
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -16,24 +18,32 @@ from telegram.ext import (
     filters,
 )
 
-# Logging Configuration
+# Dummy Web Server for Render Port Check
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running live!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+# Logging Setup
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Environment Variables & Config
+# Config
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID_RAW = os.environ.get("ADMIN_ID")
 ADMIN_ID = int(ADMIN_ID_RAW) if ADMIN_ID_RAW and ADMIN_ID_RAW.isdigit() else None
 UPI_ID = "z.ween2x.official@okaxis"
 ENTRY_FEE = 100
 
-# Conversation States
 ASK_ROLE, ASK_TOKEN, ASK_NAME, ASK_IGN, ASK_UID, ASK_CONTACT, ASK_LOCATION, ASK_PAYMENT = range(8)
-
-# Database Setup
 DB_FILE = "tournament.db"
 
 def init_db():
@@ -71,17 +81,9 @@ def generate_random_code(length=5):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
 def get_upi_qr_url(upi_id, name, amount):
-    params = {
-        "pa": upi_id,
-        "pn": name,
-        "am": str(amount),
-        "cu": "INR"
-    }
+    params = {"pa": upi_id, "pn": name, "am": str(amount), "cu": "INR"}
     upi_uri = f"upi://pay?{urllib.parse.urlencode(params)}"
-    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_uri)}"
-    return qr_url
-
-# Workflow Handlers
+    return f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_uri)}"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
@@ -129,28 +131,26 @@ async def process_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
-    cursor.execute("SELECT team_id, role, token FROM players WHERE token = ? AND status = 'APPROVED'", (token_input,))
+    cursor.execute("SELECT team_id, role, token FROM players WHERE token = ?", (token_input,))
     leader_entry = cursor.fetchone()
     
     if not leader_entry:
         conn.close()
         await update.message.reply_text(
-            "⚠️ **Invalid ya Unverified Token!**\n\n"
-            "Kripya apne Leader se sahi Token maangein aur yahan dobara enter karein:",
+            "⚠️ **Invalid Token Code!**\n\n"
+            "Kripya apne Leader se sahi Token maangein aur dobara type karein:",
             parse_mode="Markdown"
         )
         return ASK_TOKEN
     
     team_id = leader_entry[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM players WHERE team_id = ? AND status = 'APPROVED'", (team_id,))
+    cursor.execute("SELECT COUNT(*) FROM players WHERE team_id = ?", (team_id,))
     player_count = cursor.fetchone()[0]
     
     if player_count >= 4:
         conn.close()
         await update.message.reply_text(
-            "❌ **Team Full!**\n"
-            "Is team me pehle hi 4 players poore ho chuke hain.",
+            "❌ **Team Full!**\nIs team me pehle hi 4 players poore ho chuke hain.",
             parse_mode="Markdown"
         )
         return ConversationHandler.END
@@ -189,7 +189,6 @@ async def get_contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 async def get_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['location'] = update.message.text.strip()
-    
     qr_url = get_upi_qr_url(UPI_ID, "z.ween2x Tournament", ENTRY_FEE)
     
     pay_msg = (
@@ -211,8 +210,7 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     if not (utr.isdigit() and len(utr) >= 8):
         await update.message.reply_text(
-            "⚠️ **Galat UTR / Transaction Number!**\n"
-            "Kripya sahi 12-digit UTR number enter karein:",
+            "⚠️ **Galat UTR / Transaction Number!**\nKripya sahi 12-digit UTR number enter karein:",
             parse_mode="Markdown"
         )
         return ASK_PAYMENT
@@ -279,8 +277,6 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         
     return ConversationHandler.END
 
-# Admin Actions
-
 async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -291,7 +287,6 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    
     cursor.execute("SELECT user_id, token, role, team_id FROM players WHERE id = ?", (player_id,))
     player = cursor.fetchone()
     
@@ -305,51 +300,44 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action == "app":
         cursor.execute("UPDATE players SET status = 'APPROVED' WHERE id = ?", (player_id,))
         conn.commit()
+        await query.edit_message_text(f"✅ Approved Player ID #{player_id}")
         
-        await query.edit_message_text(f"✅ Registration Approved for Player ID #{player_id}")
-        
-        msg = (
-            f"🎉 **Registration Confirmed!**\n\n"
-            f"Aapka Unique Token Code ye hai:\n`{token}`\n\n"
-        )
+        msg = f"🎉 **Registration Confirmed!**\n\nAapka Unique Token Code:\n`{token}`\n\n"
         if role == 'A':
-            msg += "👉 Ye Token apne **3 Teammates** ke sath share karein taaki wo aapki team me join kar sakein!"
+            msg += "👉 Ye Token apne **3 Teammates** ke sath share karein!"
         else:
-            msg += f"👉 Aap Team #{team_id} me successfully add ho chuke hain!"
+            msg += f"👉 Aap Team #{team_id} me add ho chuke hain!"
             
         try:
             await context.bot.send_message(chat_id=user_id, text=msg, parse_mode="Markdown")
         except Exception as e:
-            logger.error(f"Failed to send confirmation to user: {e}")
+            logger.error(f"Error sending msg: {e}")
             
     elif action == "rej":
         cursor.execute("UPDATE players SET status = 'REJECTED' WHERE id = ?", (player_id,))
         conn.commit()
-        
-        await query.edit_message_text(f"❌ Registration Rejected for Player ID #{player_id}")
+        await query.edit_message_text(f"❌ Rejected Player ID #{player_id}")
         
         try:
-            await context.bot.send_message(
-                chat_id=user_id, 
-                text="❌ **Registration Rejected!**\n\nAapka payment ya details verify nahi ho payi. Kripya Admin se contact karein.",
-                parse_mode="Markdown"
-            )
+            await context.bot.send_message(chat_id=user_id, text="❌ **Registration Rejected!**\nDetails verify nahi hui.", parse_mode="Markdown")
         except Exception as e:
-            logger.error(f"Failed to send rejection to user: {e}")
+            logger.error(f"Error sending msg: {e}")
 
     conn.close()
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("❌ Registration process cancelled.")
+    await update.message.reply_text("❌ Process cancelled.")
     return ConversationHandler.END
 
-# Main Function
 def main():
     if not BOT_TOKEN:
-        raise ValueError("BOT_TOKEN Variable Set Nahi Hai!")
+        raise ValueError("BOT_TOKEN Variable Missing!")
 
     init_db()
     
+    # Flask Server in background thread
+    threading.Thread(target=run_flask, daemon=True).start()
+
     application = Application.builder().token(BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
@@ -374,7 +362,7 @@ def main():
     application.add_handler(conv_handler)
     application.add_handler(CallbackQueryHandler(admin_decision, pattern="^(app|rej)_"))
 
-    logger.info("🚀 zween2x Registration Bot Running Live...")
+    logger.info("🚀 Bot Active...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
