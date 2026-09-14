@@ -1,6 +1,5 @@
 import os
 import logging
-import asyncio
 import pandas as pd
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -21,9 +20,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Config Options
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN_HERE")
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "123456789"))  # Change with your Telegram ID
+# Fetch Configuration
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+ADMIN_ID_RAW = os.environ.get("ADMIN_ID")
+ADMIN_ID = int(ADMIN_ID_RAW) if ADMIN_ID_RAW and ADMIN_ID_RAW.isdigit() else None
+
 EXCEL_FILE = "registrations.xlsx"
 QR_IMAGE_PATH = "qr.jpg"
 
@@ -31,7 +32,6 @@ QR_IMAGE_PATH = "qr.jpg"
 ENTERING_NAME, ENTERING_UID, UPLOADING_PAYMENT = range(3)
 
 def init_excel():
-    """Excel file setup for storing registration details"""
     if not os.path.exists(EXCEL_FILE):
         df = pd.DataFrame(columns=[
             "Timestamp", "User ID", "Username", "Player Name", 
@@ -40,13 +40,12 @@ def init_excel():
         df.to_excel(EXCEL_FILE, index=False)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Start command handler"""
     user = update.effective_user
     welcome_text = (
-        f"🔥 **Welcome to z.ween2x Official Registration Bot!** 🔥\n\n"
+        f"🔥 *Welcome to z.ween2x Official Registration Bot!* 🔥\n\n"
         f"Hello {user.first_name},\n"
         f"Register for upcoming tournaments quickly using this bot.\n\n"
-        f"Click **Register Now** below to start."
+        f"Click *Register Now* below to start."
     )
     keyboard = [[InlineKeyboardButton("📝 Register Now", callback_data="start_reg")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -59,28 +58,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Callback query router"""
     query = update.callback_query
     await query.answer()
     
     if query.data == "start_reg":
-        await query.message.reply_text("1️⃣ Please enter your **In-Game Name (IGN)**:")
+        await query.message.reply_text("1️⃣ Please enter your *In-Game Name (IGN)*:", parse_mode="Markdown")
         return ENTERING_NAME
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Store Player Name"""
     context.user_data['player_name'] = update.message.text
-    await update.message.reply_text("2️⃣ Please enter your **Free Fire UID**:")
+    await update.message.reply_text("2️⃣ Please enter your *Free Fire UID*:", parse_mode="Markdown")
     return ENTERING_UID
 
 async def get_uid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Store UID & send QR for payment"""
     context.user_data['ff_uid'] = update.message.text
     
     payment_msg = (
-        "3️⃣ **Payment Verification**\n\n"
-        "Please scan the QR code below, complete your entry fee payment, "
-        "and upload the **Payment Screenshot** here."
+        "3️⃣ *Payment Verification*\n\n"
+        "Please scan the QR code, complete your entry fee payment, "
+        "and upload the *Payment Screenshot* here."
     )
     
     if os.path.exists(QR_IMAGE_PATH):
@@ -92,11 +88,9 @@ async def get_uid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return UPLOADING_PAYMENT
 
 async def get_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Receive Screenshot & Save Data"""
     user = update.effective_user
     photo_file = update.message.photo[-1].file_id
     
-    # Save to Excel
     init_excel()
     df = pd.read_excel(EXCEL_FILE)
     new_entry = {
@@ -111,46 +105,38 @@ async def get_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
     df.to_excel(EXCEL_FILE, index=False)
     
-    # User Confirmation
     await update.message.reply_text(
-        "✅ **Registration Submitted Successfully!**\n\n"
-        "Your details have been recorded. Our team will verify your payment shortly."
+        "✅ *Registration Submitted Successfully!*\n\n"
+        "Your details have been recorded. Our team will verify your payment shortly.",
+        parse_mode="Markdown"
     )
     
-    # Forward to Admin
-    admin_caption = (
-        f"🚨 **New Registration Received**\n\n"
-        f"👤 **Name:** {context.user_data.get('player_name')}\n"
-        f"🆔 **FF UID:** {context.user_data.get('ff_uid')}\n"
-        f"📱 **Telegram:** @{user.username} (ID: {user.id})"
-    )
-    try:
-        await context.bot.send_photo(chat_id=ADMIN_ID, photo=photo_file, caption=admin_caption, parse_mode="Markdown")
-    except Exception as e:
-        logger.error(f"Failed to notify admin: {e}")
+    if ADMIN_ID:
+        admin_caption = (
+            f"🚨 *New Registration Received*\n\n"
+            f"👤 *Name:* {context.user_data.get('player_name')}\n"
+            f"🆔 *FF UID:* {context.user_data.get('ff_uid')}\n"
+            f"📱 *Telegram:* @{user.username} (ID: {user.id})"
+        )
+        try:
+            await context.bot.send_photo(chat_id=ADMIN_ID, photo=photo_file, caption=admin_caption, parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"Failed to notify admin: {e}")
         
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Cancel conversation"""
     await update.message.reply_text("❌ Registration process cancelled.")
     return ConversationHandler.END
 
 def main():
-    """Start the bot server cleanly for Python 3.14+ / Render"""
-    # Fix event loop policy for Python 3.10+ environments
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    if not BOT_TOKEN:
+        raise ValueError("BOT_TOKEN environment variable is not set!")
 
     init_excel()
     
-    # Initialize Application
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Setup Handlers
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", start),
@@ -169,8 +155,6 @@ def main():
     application.add_handler(CommandHandler("start", start))
 
     logger.info("⚡ zween2x_official Bot is running live...")
-    
-    # Run polling loop
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
