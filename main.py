@@ -43,6 +43,9 @@ ADMIN_ID = int(ADMIN_ID_RAW) if ADMIN_ID_RAW and ADMIN_ID_RAW.isdigit() else Non
 UPI_ID = "z.ween2x.official@okaxis"
 ENTRY_FEE = 100
 
+TELEGRAM_CHANNEL_LINK = "https://t.me/+W0nd-axUCgdiZWZl"
+YOUTUBE_CHANNEL_LINK = "https://youtube.com/@zween2x?si=NlZ7_M-fJ-Dg3B0T"
+
 ASK_ROLE, ASK_TOKEN, ASK_NAME, ASK_IGN, ASK_UID, ASK_CONTACT, ASK_LOCATION, ASK_PAYMENT = range(8)
 DB_FILE = "tournament.db"
 
@@ -249,11 +252,23 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     conn.commit()
     conn.close()
     
-    await update.message.reply_text(
-        "⌛ **Registration Request Submitted!**\n\n"
-        "Aapki details verification ke liye Admin ko bhej di gayi hain. Approval milte hi aapko Token receive ho jayega.",
-        parse_mode="Markdown"
+    # Confirmation & Channel Instructions
+    announcement_msg = (
+        "⌛ **Registration Request Submitted!**\n"
+        "Aapki details verification ke liye Admin ko bhej di gayi hain. Approval milte hi aapko Token receive ho jayega.\n\n"
+        "📢 **Z.WEEN2X TOURNAMENT - IMPORTANT INSTRUCTIONS** 📢\n\n"
+        "1️⃣ **Telegram Channel Join Karna Mandatory (Zaroori) Hai:**\n"
+        "👉 Tournament ke saare Rules, Match Schedules, Room ID/Password, aur Daily Updates aapko humare official Telegram Channel par hi milenge.\n\n"
+        "2️⃣ **Process Samjhne Ke Liye Video Dekhein:**\n"
+        "👉 Agar aapko kisi bhi step me confusion hai, toh humare YouTube Channel par tutorial video dekh kar samajh sakte hain.\n\n"
+        "3️⃣ **YouTube Channel Ko Subscribe Karein:**\n"
+        "👉 Channel ko Subscribe karna na bhulein, kyunki aapke matches **YOUTUBE PAR LIVE STREAM** honge! 🎥🔥\n\n"
+        f"📲 **Telegram Channel:** {TELEGRAM_CHANNEL_LINK}\n"
+        f"🔴 **YouTube Channel:** {YOUTUBE_CHANNEL_LINK}\n\n"
+        "All The Best! 🔥🎮\n— **z.ween2x Management**"
     )
+    
+    await update.message.reply_text(announcement_msg, parse_mode="Markdown")
     
     if ADMIN_ID:
         admin_msg = (
