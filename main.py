@@ -39,7 +39,7 @@ UPI_ID = "z.ween2x.official@okaxis"
 ENTRY_FEE = 100
 
 TELEGRAM_CHANNEL_LINK = "https://t.me/+W0nd-axUCgdiZWZl"
-YOUTUBE_CHANNEL_LINK = "https://youtube.com/@zween2x?si=NlZ7_M-fJ-Dg3B0T"
+YOUTUBE_CHANNEL_LINK = "https://youtube.com/@zween2x?si=m7m_AMXn87dwO4wS"
 
 ASK_ROLE, ASK_TOKEN, ASK_NAME, ASK_IGN, ASK_UID, ASK_CONTACT, ASK_LOCATION, ASK_PAYMENT = range(8)
 DB_FILE = "tournament.db"
@@ -150,16 +150,25 @@ def build_team_info_text(team_id):
 # -------------------------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
+    
     welcome_msg = (
         "🔥 *Welcome to z.ween2x Official Tournament Registration Bot!* 🔥\n\n"
-        "Aap tournament me kis tarah register karna chahte hain?\n\n"
+        "🔴 **IMPORTANT NOTICE & YOUTUBE STREAMING:**\n"
+        "Humare tournament ke **SAARE MATCHES YOUTUBE PAR LIVE STREAM** hone wale hain! 🎥🎮\n"
+        "Toh abhi humare official YouTube Channel ko **Subscribe** karein!\n\n"
+        "📌 **Tutorial & Help:**\n"
+        "Agar aapko **Team Registration** me ya **Team Join** karne me koi bhi dikkat aa rahi hai, "
+        "toh niche button par click karke humari YouTube video zaroor dekhein.\n\n"
+        "--- Aap tournament me kis tarah register karna chahte hain? ---\n\n"
         "1️⃣ **Nayi Team Banayein (Team Leader)**\n"
         "2️⃣ **Pehle Se Bani Team Me Judein (Teammate)**\n\n"
         "💡 *Apni Team details dekhne ke liye command:* `/team <TOKEN_YA_TEAM_ID>`"
     )
+    
     keyboard = [
-        [InlineKeyboardButton("👑 Nayi Team (Leader)", callback_data="role_leader")],
-        [InlineKeyboardButton("🎮 Existing Team (Teammate)", callback_data="role_member")]
+        [InlineKeyboardButton("🔴 Subscribe YouTube Channel & Tutorial", url=YOUTUBE_CHANNEL_LINK)],
+        [InlineKeyboardButton("👑 Nayi Team Banayein (Leader)", callback_data="role_leader")],
+        [InlineKeyboardButton("🎮 Team Me Judein (Teammate)", callback_data="role_member")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -266,15 +275,17 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user = update.effective_user
 
     announcement_msg = (
-        "⌛ **Registration Request Submitted!**\n\n"
-        "Aapki details verification ke liye Admin ko bhej di gayi hain. Approval milte hi aapko Token receive ho jayega.\n\n"
-        "📢 **Z.WEEN2X TOURNAMENT - IMPORTANT INSTRUCTIONS** 📢\n\n"
-        "1️⃣ **Telegram Channel Join Karna Mandatory Hai:**\n"
-        "👉 Rules, Match Schedules, Room ID/Password official Telegram Channel par hi milenge.\n\n"
-        "2️⃣ **YouTube Channel Ko Subscribe Karein:**\n"
-        "👉 Aapke matches **YOUTUBE PAR LIVE STREAM** honge! 🎥🔥\n\n"
-        f"📲 **Telegram Channel:** {TELEGRAM_CHANNEL_LINK}\n"
-        f"🔴 **YouTube Channel:** {YOUTUBE_CHANNEL_LINK}\n\n"
+        "⌛ **Registration Details Submitted Successfully!**\n\n"
+        "Aapki details verification ke liye Admin ko bhej di gayi hain. Approval milte hi aapko Token recieve ho jayega.\n\n"
+        "--------------------------------------------------\n"
+        "📢 **IMPORTANT STEP: Telegram Channel Join Karein!**\n\n"
+        "Tournament ki **SAARI DETAILS, RULES, MATCH SCHEDULE, aur ROOM ID & PASSWORD** sirf humare official Telegram channel par hi share ki jayengi.\n\n"
+        "👉 **Sabhi players ka Telegram channel join karna MANDATORY hai!**\n\n"
+        "📲 **Join Telegram Channel:**\n"
+        f"👉 {TELEGRAM_CHANNEL_LINK}\n\n"
+        "--------------------------------------------------\n"
+        "🔴 **YouTube Channel:**\n"
+        f"👉 {YOUTUBE_CHANNEL_LINK}\n\n"
         "All The Best! 🔥🎮\n— **z.ween2x Management**"
     )
     
@@ -457,7 +468,7 @@ async def admin_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"🔑 **Your Token:** `{token}`\n\n"
                 f"📋 **Aapki Team Ki Details:**\n\n"
                 f"{team_info_text}\n\n"
-                f"📢 Telegram: {TELEGRAM_CHANNEL_LINK}\n"
+                f"📲 Telegram: {TELEGRAM_CHANNEL_LINK}\n"
                 f"🔴 YouTube: {YOUTUBE_CHANNEL_LINK}"
             )
             try:
