@@ -219,7 +219,6 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     utr_text = update.message.text.strip() if update.message and update.message.text else "N/A"
     user = update.effective_user
 
-    # STEP 1: IMMEDIATELY REPLY TO USER FIRST (Prevent hanging!)
     announcement_msg = (
         "⌛ **Registration Request Submitted!**\n\n"
         "Aapki details verification ke liye Admin ko bhej di gayi hain. Approval milte hi aapko Token receive ho jayega.\n\n"
@@ -238,7 +237,6 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except Exception as e:
         logger.error(f"Error sending user reply: {e}")
 
-    # STEP 2: SAVE TO DATABASE DEFENSIVELY
     player_id = random.randint(10000, 99999)
     team_id = 1
     base_code = "TEMP"
@@ -257,7 +255,9 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             context.user_data['base_code'] = base_code
         else:
             team_id = context.user_data.get('team_id', 1)
-            base_code = context.user_data.get('base_code', 'TEMP')
+            cursor.execute("SELECT base_code FROM teams WHERE team_id = ?", (team_id,))
+            res = cursor.fetchone()
+            base_code = res[0] if res else 'TEMP'
 
         temp_token = f"#zween2x-{team_id}-{role_char}-{base_code}"
 
@@ -281,7 +281,6 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except Exception as e:
         logger.error(f"DB Insert Error: {e}")
 
-    # STEP 3: ADMIN NOTIFICATION (Wrapped in try-except so it never breaks bot)
     if ADMIN_ID:
         admin_msg = (
             f"🚨 **New Registration Request**\n\n"
@@ -308,9 +307,88 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         except Exception as e:
-            logger.error(f"Admin Notification Error (Check if ADMIN_ID has started bot): {e}")
+            logger.error(f"Admin Notification Error: {e}")
 
     return ConversationHandler.END
+
+# -------------------------------------------------------------
+# ADMIN BUTTON CALLBACK HANDLER (VERIFY / REJECT)
+# -------------------------------------------------------------
+async def admin_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if not (data.startswith("app_") or data.startswith("rej_")):
+        return
+
+    action, player_id_str = data.split("_")
+    player_id = int(player_id_str)
+
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, token, full_name, role FROM players WHERE id = ?", (player_id,))
+        player = cursor.fetchone()
+
+        if not player:
+            await query.edit_message_text(f"❌ Record not found for Player ID #{player_id}")
+            conn.close()
+            return
+
+        user_id, token, full_name, role = player
+
+        if action == "app":
+            cursor.execute("UPDATE players SET status = 'APPROVED' WHERE id = ?", (player_id,))
+            conn.commit()
+            
+            # Update Admin Message
+            await query.edit_message_text(
+                f"✅ **REGISTRATION APPROVED**\n\n"
+                f"👤 **Player:** {full_name}\n"
+                f"🔑 **Token:** `{token}`\n"
+                f"STATUS: VERIFIED"
+            )
+
+            # Send Notification & Token to User
+            user_msg = (
+                f"🎉 **CONGRATULATIONS! Registration Approved!** 🎉\n\n"
+                f"Aapka payment verify ho gaya hai. Aapka Registration Token niche diya gaya hai:\n\n"
+                f"🔑 **Your Token:** `{token}`\n\n"
+                f"*(Note: Agar aap Team Leader hain, to ye Token apni team members ke sath share karein taaki wo register kar sakein.)*\n\n"
+                f"📢 Telegram Channel: {TELEGRAM_CHANNEL_LINK}\n"
+                f"🔴 YouTube Live: {YOUTUBE_CHANNEL_LINK}"
+            )
+            try:
+                await context.bot.send_message(chat_id=user_id, text=user_msg, parse_mode="Markdown")
+            except Exception as e:
+                logger.error(f"Failed to send approval message to user: {e}")
+
+        elif action == "rej":
+            cursor.execute("UPDATE players SET status = 'REJECTED' WHERE id = ?", (player_id,))
+            conn.commit()
+
+            # Update Admin Message
+            await query.edit_message_text(
+                f"❌ **REGISTRATION REJECTED**\n\n"
+                f"👤 **Player:** {full_name}\n"
+                f"STATUS: REJECTED"
+            )
+
+            # Send Rejection Notice to User
+            user_msg = (
+                f"❌ **Registration Rejected!**\n\n"
+                f"Aapka UTR Verification fail ho gaya hai. Kripya sahi payment screenshot aur UTR ke sath dobara register karein."
+            )
+            try:
+                await context.bot.send_message(chat_id=user_id, text=user_msg, parse_mode="Markdown")
+            except Exception as e:
+                logger.error(f"Failed to send rejection message to user: {e}")
+
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error processing admin decision: {e}")
+        await query.edit_message_text(f"⚠️ Error processing request: {str(e)}")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("❌ Registration process cancelled. Start again with /start.")
@@ -351,7 +429,10 @@ def main():
         allow_reentry=True
     )
 
+    # Add Handlers
     application.add_handler(conv_handler)
+    application.add_handler(CallbackQueryHandler(admin_button_click, pattern="^(app_|rej_)"))
+
     logger.info("🚀 z.ween2x Bot Started Successfully!")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
