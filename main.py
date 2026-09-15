@@ -109,7 +109,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "🔥 *Welcome to z.ween2x Official Tournament Registration Bot!* 🔥\n\n"
         "Aap tournament me kis tarah register karna chahte hain?\n\n"
         "1️⃣ **Nayi Team Banayein (Team Leader)**\n"
-        "2️⃣ **Pehle Se Bani Team Me Judein (Teammate)**"
+        "2️⃣ **Pehle Se Bani Team Me Judein (Teammate)**\n\n"
+        "💡 *Apni Team details dekhne ke liye command:* `/team <TOKEN_YA_TEAM_ID>`"
     )
     keyboard = [
         [InlineKeyboardButton("👑 Nayi Team (Leader)", callback_data="role_leader")],
@@ -312,6 +313,82 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return ConversationHandler.END
 
 # -------------------------------------------------------------
+# TEAM DETAILS LOOKUP COMMAND (/team <TOKEN or TEAM_ID>)
+# -------------------------------------------------------------
+async def team_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "⚠️ Kripya Team ID ya Token enter karein.\n"
+            "**Usage:** `/team #zween2x-1-A-FTF0B` YA `/team 1`",
+            parse_mode="Markdown"
+        )
+        return
+
+    query_param = args[0].strip()
+    
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+
+        # Check if input is Token or Team ID
+        if query_param.startswith("#zween2x") or "-" in query_param:
+            cursor.execute("SELECT team_id FROM players WHERE token = ?", (query_param,))
+            res = cursor.fetchone()
+            if not res:
+                await update.message.reply_text("❌ Is Token ke sath koi team nahi mili!")
+                conn.close()
+                return
+            target_team_id = res[0]
+        else:
+            try:
+                target_team_id = int(query_param.replace("#", ""))
+            except ValueError:
+                await update.message.reply_text("⚠️ Invalid Team ID or Token format!")
+                conn.close()
+                return
+
+        # Fetch Team Players
+        cursor.execute('''
+            SELECT role, full_name, ign, ff_uid, contact, status, token 
+            FROM players 
+            WHERE team_id = ? 
+            ORDER BY role ASC
+        ''', (target_team_id,))
+        
+        players = cursor.fetchall()
+        conn.close()
+
+        if not players:
+            await update.message.reply_text(f"❌ Team #{target_team_id} me koi players nahi mile.")
+            return
+
+        response_msg = f"🏆 **TEAM DETAILS FOR TEAM #{target_team_id}**\n\n"
+        
+        role_names = {'A': '👑 Leader (Player A)', 'B': '🎮 Teammate B', 'C': '🎮 Teammate C', 'D': '🎮 Teammate D'}
+        
+        for p in players:
+            p_role, p_name, p_ign, p_uid, p_contact, p_status, p_token = p
+            status_icon = "✅ Approved" if p_status == "APPROVED" else ("⌛ Pending" if p_status == "PENDING" else "❌ Rejected")
+            
+            response_msg += (
+                f"--- {role_names.get(p_role, p_role)} ---\n"
+                f"👤 **Name:** {p_name}\n"
+                f"🎮 **IGN:** {p_ign}\n"
+                f"🆔 **UID:** `{p_uid}`\n"
+                f"📱 **Contact:** {p_contact}\n"
+                f"📌 **Status:** {status_icon}\n"
+                f"🔑 **Token:** `{p_token}`\n\n"
+            )
+
+        response_msg += f"📊 Total Players Registered: **{len(players)}/4**"
+        await update.message.reply_text(response_msg, parse_mode="Markdown")
+
+    except Exception as e:
+        logger.error(f"Error fetching team details: {e}")
+        await update.message.reply_text("⚠️ Team details fetch karne me issue aaya.")
+
+# -------------------------------------------------------------
 # ADMIN BUTTON CALLBACK HANDLER (VERIFY / REJECT)
 # -------------------------------------------------------------
 async def admin_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -342,7 +419,6 @@ async def admin_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
             cursor.execute("UPDATE players SET status = 'APPROVED' WHERE id = ?", (player_id,))
             conn.commit()
             
-            # Update Admin Message
             await query.edit_message_text(
                 f"✅ **REGISTRATION APPROVED**\n\n"
                 f"👤 **Player:** {full_name}\n"
@@ -350,7 +426,6 @@ async def admin_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"STATUS: VERIFIED"
             )
 
-            # Send Notification & Token to User
             user_msg = (
                 f"🎉 **CONGRATULATIONS! Registration Approved!** 🎉\n\n"
                 f"Aapka payment verify ho gaya hai. Aapka Registration Token niche diya gaya hai:\n\n"
@@ -368,14 +443,12 @@ async def admin_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
             cursor.execute("UPDATE players SET status = 'REJECTED' WHERE id = ?", (player_id,))
             conn.commit()
 
-            # Update Admin Message
             await query.edit_message_text(
                 f"❌ **REGISTRATION REJECTED**\n\n"
                 f"👤 **Player:** {full_name}\n"
                 f"STATUS: REJECTED"
             )
 
-            # Send Rejection Notice to User
             user_msg = (
                 f"❌ **Registration Rejected!**\n\n"
                 f"Aapka UTR Verification fail ho gaya hai. Kripya sahi payment screenshot aur UTR ke sath dobara register karein."
@@ -430,6 +503,7 @@ def main():
     )
 
     # Add Handlers
+    application.add_handler(CommandHandler("team", team_details))
     application.add_handler(conv_handler)
     application.add_handler(CallbackQueryHandler(admin_button_click, pattern="^(app_|rej_)"))
 
