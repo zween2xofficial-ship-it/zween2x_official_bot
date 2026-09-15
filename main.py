@@ -19,10 +19,10 @@ from telegram.ext import (
 )
 
 # -------------------------------------------------------------
-# DIRECT CONFIGURATION
+# ENVIRONMENT & CONFIGURATION (NO HARDCODED TOKENS)
 # -------------------------------------------------------------
-BOT_TOKEN = "8913279275:AAFfJaQNp9QRLhV28-jseqLEUFFX3LiboVc"
-ADMIN_ID = 8866210749
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "8866210749"))
 UPI_ID = "z.ween2x.official@okaxis"
 ENTRY_FEE = 100
 
@@ -39,7 +39,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "z.ween2x Bot 24/7 Active!"
+    return "z.ween2x Official Bot is Active 24/7!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -52,38 +52,40 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # -------------------------------------------------------------
-# DATABASE INITIALIZATION
+# SAFE DATABASE INITIALIZATION
 # -------------------------------------------------------------
 def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS teams (
-            team_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            base_code TEXT UNIQUE,
-            created_at TEXT
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS players (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            team_id INTEGER,
-            role TEXT,
-            user_id INTEGER,
-            full_name TEXT,
-            ign TEXT,
-            ff_uid TEXT,
-            contact TEXT,
-            location TEXT,
-            utr TEXT,
-            token TEXT UNIQUE,
-            status TEXT,
-            created_at TEXT,
-            FOREIGN KEY(team_id) REFERENCES teams(team_id)
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS teams (
+                team_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                base_code TEXT UNIQUE,
+                created_at TEXT
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS players (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                team_id INTEGER,
+                role TEXT,
+                user_id INTEGER,
+                full_name TEXT,
+                ign TEXT,
+                ff_uid TEXT,
+                contact TEXT,
+                location TEXT,
+                utr TEXT,
+                token TEXT UNIQUE,
+                status TEXT,
+                created_at TEXT
+            )
+        ''')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Database Initialization Error: {e}")
 
 def generate_random_code(length=5):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
@@ -94,7 +96,7 @@ def get_upi_qr_url(upi_id, name, amount):
     return f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_uri)}"
 
 # -------------------------------------------------------------
-# CONVERSATION FLOW
+# FLOW LOGIC
 # -------------------------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
@@ -139,33 +141,36 @@ async def role_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 async def process_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     token_input = update.message.text.strip()
     
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT team_id, role, token FROM players WHERE token = ?", (token_input,))
-    leader_entry = cursor.fetchone()
-    
-    if not leader_entry:
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT team_id, role, token FROM players WHERE token = ?", (token_input,))
+        leader_entry = cursor.fetchone()
+        
+        if not leader_entry:
+            conn.close()
+            await update.message.reply_text("⚠️ **Invalid Token Code!** Sahi token dobara enter karein:", parse_mode="Markdown")
+            return ASK_TOKEN
+        
+        team_id = leader_entry[0]
+        cursor.execute("SELECT COUNT(*) FROM players WHERE team_id = ?", (team_id,))
+        player_count = cursor.fetchone()[0]
+        
+        if player_count >= 4:
+            conn.close()
+            await update.message.reply_text("❌ **Team Full!** Is team me 4 players poore ho chuke hain.", parse_mode="Markdown")
+            return ConversationHandler.END
+        
+        role_map = {1: 'B', 2: 'C', 3: 'D'}
+        context.user_data['team_id'] = team_id
+        context.user_data['role_char'] = role_map.get(player_count, 'D')
+        
+        cursor.execute("SELECT base_code FROM teams WHERE team_id = ?", (team_id,))
+        base_res = cursor.fetchone()
+        context.user_data['base_code'] = base_res[0] if base_res else "TEMP"
         conn.close()
-        await update.message.reply_text("⚠️ **Invalid Token Code!** Sahi token dobara enter karein:", parse_mode="Markdown")
-        return ASK_TOKEN
-    
-    team_id = leader_entry[0]
-    cursor.execute("SELECT COUNT(*) FROM players WHERE team_id = ?", (team_id,))
-    player_count = cursor.fetchone()[0]
-    
-    if player_count >= 4:
-        conn.close()
-        await update.message.reply_text("❌ **Team Full!** Is team me 4 players poore ho chuke hain.", parse_mode="Markdown")
-        return ConversationHandler.END
-    
-    role_map = {1: 'B', 2: 'C', 3: 'D'}
-    context.user_data['team_id'] = team_id
-    context.user_data['role_char'] = role_map.get(player_count, 'D')
-    
-    cursor.execute("SELECT base_code FROM teams WHERE team_id = ?", (team_id,))
-    base_res = cursor.fetchone()
-    context.user_data['base_code'] = base_res[0] if base_res else "TEMP"
-    conn.close()
+    except Exception as e:
+        logger.error(f"Token Verification Error: {e}")
     
     await update.message.reply_text("✅ Token Valid! Ab apna **Full Name** enter karein:", parse_mode="Markdown")
     return ASK_NAME
@@ -213,7 +218,7 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user = update.effective_user
     context.user_data['utr'] = utr
 
-    player_id = 1
+    player_id = random.randint(1000, 9999)
     
     try:
         conn = sqlite3.connect(DB_FILE)
@@ -250,9 +255,9 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         conn.commit()
         conn.close()
     except Exception as e:
-        logger.error(f"Database Error: {e}")
+        logger.error(f"Database Save Error: {e}")
 
-    # Reply to User Immediately
+    # Reply to User
     announcement_msg = (
         "⌛ **Registration Request Submitted!**\n\n"
         "Aapki details verification ke liye Admin ko bhej di gayi hain. Approval milte hi aapko Token receive ho jayega.\n\n"
@@ -267,7 +272,7 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
     await update.message.reply_text(announcement_msg, parse_mode="Markdown")
     
-    # Notify Admin
+    # Send Notification to Admin
     if ADMIN_ID:
         admin_msg = (
             f"🚨 **New Registration Verification Request**\n\n"
@@ -294,7 +299,7 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return ConversationHandler.END
 
 # -------------------------------------------------------------
-# ADMIN SYSTEM & CONTROL
+# ADMIN CONTROLS
 # -------------------------------------------------------------
 async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -314,7 +319,7 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player = cursor.fetchone()
     
     if not player:
-        await query.edit_message_text("❌ Entry Not Found!")
+        await query.edit_message_text("❌ Entry Not Found in local DB!")
         conn.close()
         return
 
@@ -334,7 +339,7 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(chat_id=user_id, text=msg, parse_mode="Markdown")
         except Exception as e:
-            logger.error(f"Error sending msg: {e}")
+            logger.error(f"Error sending msg to user: {e}")
             
     elif action == "rej":
         cursor.execute("UPDATE players SET status = 'REJECTED' WHERE id = ?", (player_id,))
@@ -378,6 +383,10 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # MAIN APPLICATION ENGINE
 # -------------------------------------------------------------
 def main():
+    if not BOT_TOKEN:
+        logger.error("FATAL: BOT_TOKEN Environment variable missing!")
+        return
+
     init_db()
     threading.Thread(target=run_flask, daemon=True).start()
 
