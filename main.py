@@ -18,12 +18,12 @@ from telegram.ext import (
     filters,
 )
 
-# Dummy Web Server for Render Port Check
+# Dummy Web Server for Render Health Checks
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot is running live!"
+    return "z.ween2x Bot is running live!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -36,7 +36,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Config
+# Config & Environment Variables
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID_RAW = os.environ.get("ADMIN_ID")
 ADMIN_ID = int(ADMIN_ID_RAW) if ADMIN_ID_RAW and ADMIN_ID_RAW.isdigit() else None
@@ -163,7 +163,8 @@ async def process_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     context.user_data['role_char'] = role_map.get(player_count, 'D')
     
     cursor.execute("SELECT base_code FROM teams WHERE team_id = ?", (team_id,))
-    context.user_data['base_code'] = cursor.fetchone()[0]
+    base_res = cursor.fetchone()
+    context.user_data['base_code'] = base_res[0] if base_res else "TEMP"
     
     conn.close()
     
@@ -213,7 +214,7 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     if not (utr.isdigit() and len(utr) >= 8):
         await update.message.reply_text(
-            "⚠️ **Galat UTR / Transaction Number!**\nKripya sahi 12-digit UTR number enter karein:",
+            "⚠️ **Galat UTR / Transaction Number!**\n\nKripya sahi 12-digit UTR number enter karein:",
             parse_mode="Markdown"
         )
         return ASK_PAYMENT
@@ -232,9 +233,9 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         context.user_data['team_id'] = team_id
         context.user_data['base_code'] = base_code
     
-    role_char = context.user_data['role_char']
-    team_id = context.user_data['team_id']
-    base_code = context.user_data['base_code']
+    role_char = context.user_data.get('role_char', 'A')
+    team_id = context.user_data.get('team_id', 1)
+    base_code = context.user_data.get('base_code', 'TEMP')
     temp_token = f"#zween2x-{team_id}-{role_char}-{base_code}"
     
     cursor.execute('''
@@ -242,9 +243,9 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)
     ''', (
         team_id, role_char, user.id,
-        context.user_data['full_name'], context.user_data['ign'],
-        context.user_data['ff_uid'], context.user_data['contact'],
-        context.user_data['location'], utr, temp_token,
+        context.user_data.get('full_name', ''), context.user_data.get('ign', ''),
+        context.user_data.get('ff_uid', ''), context.user_data.get('contact', ''),
+        context.user_data.get('location', ''), utr, temp_token,
         datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ))
     
@@ -252,9 +253,8 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     conn.commit()
     conn.close()
     
-    # Confirmation & Channel Instructions
     announcement_msg = (
-        "⌛ **Registration Request Submitted!**\n"
+        "⌛ **Registration Request Submitted!**\n\n"
         "Aapki details verification ke liye Admin ko bhej di gayi hain. Approval milte hi aapko Token receive ho jayega.\n\n"
         "📢 **Z.WEEN2X TOURNAMENT - IMPORTANT INSTRUCTIONS** 📢\n\n"
         "1️⃣ **Telegram Channel Join Karna Mandatory (Zaroori) Hai:**\n"
@@ -273,11 +273,11 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if ADMIN_ID:
         admin_msg = (
             f"🚨 **New Registration Verification Request**\n\n"
-            f"👤 **Name:** {context.user_data['full_name']}\n"
-            f"🎮 **IGN:** {context.user_data['ign']}\n"
-            f"🆔 **FF UID:** {context.user_data['ff_uid']}\n"
-            f"📱 **Contact:** {context.user_data['contact']}\n"
-            f"📍 **Location:** {context.user_data['location']}\n"
+            f"👤 **Name:** {context.user_data.get('full_name')}\n"
+            f"🎮 **IGN:** {context.user_data.get('ign')}\n"
+            f"🆔 **FF UID:** {context.user_data.get('ff_uid')}\n"
+            f"📱 **Contact:** {context.user_data.get('contact')}\n"
+            f"📍 **Location:** {context.user_data.get('location')}\n"
             f"💳 **UTR:** `{utr}`\n"
             f"🏷️ **Role/Team:** Team #{team_id} ({role_char})\n"
             f"📱 **Telegram:** @{user.username or 'N/A'} (ID: `{user.id}`)"
@@ -288,7 +288,10 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 InlineKeyboardButton("❌ Reject", callback_data=f"rej_{player_id}")
             ]
         ]
-        await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        try:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception as e:
+            logger.error(f"Failed to send admin notification: {e}")
         
     return ConversationHandler.END
 
@@ -350,7 +353,7 @@ def main():
 
     init_db()
     
-    # Flask Server in background thread
+    # Start Web Server in background thread
     threading.Thread(target=run_flask, daemon=True).start()
 
     application = Application.builder().token(BOT_TOKEN).build()
@@ -377,7 +380,7 @@ def main():
     application.add_handler(conv_handler)
     application.add_handler(CallbackQueryHandler(admin_decision, pattern="^(app|rej)_"))
 
-    logger.info("🚀 Bot Active...")
+    logger.info("🚀 z.ween2x Bot Active...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
