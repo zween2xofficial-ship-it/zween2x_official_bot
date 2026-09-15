@@ -22,7 +22,12 @@ from telegram.ext import (
 # CONFIGURATION
 # -------------------------------------------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "8866210749"))
+ADMIN_ID_RAW = os.environ.get("ADMIN_ID", "8866210749")
+try:
+    ADMIN_ID = int(ADMIN_ID_RAW)
+except ValueError:
+    ADMIN_ID = 8866210749
+
 UPI_ID = "z.ween2x.official@okaxis"
 ENTRY_FEE = 100
 
@@ -85,7 +90,7 @@ def init_db():
         conn.commit()
         conn.close()
     except Exception as e:
-        logger.error(f"DB Error: {e}")
+        logger.error(f"DB Init Error: {e}")
 
 def generate_random_code(length=5):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
@@ -166,7 +171,7 @@ async def process_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         context.user_data['role_char'] = role_map.get(player_count, 'D')
         conn.close()
     except Exception as e:
-        logger.error(f"Token Error: {e}")
+        logger.error(f"Token Processing Error: {e}")
 
     await update.message.reply_text("✅ Token Valid! Ab apna **Full Name** enter karein:", parse_mode="Markdown")
     return ASK_NAME
@@ -204,16 +209,17 @@ async def get_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     
     try:
         await update.message.reply_photo(photo=qr_url, caption=pay_msg, parse_mode="Markdown")
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error sending photo QR: {e}")
         await update.message.reply_text(pay_msg, parse_mode="Markdown")
         
     return ASK_PAYMENT
 
 async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    utr_text = update.message.text.strip() if update.message and update.message.text else "Screenshot/Attachment"
+    utr_text = update.message.text.strip() if update.message and update.message.text else "N/A"
     user = update.effective_user
 
-    # Instant reply to user
+    # STEP 1: IMMEDIATELY REPLY TO USER FIRST (Prevent hanging!)
     announcement_msg = (
         "⌛ **Registration Request Submitted!**\n\n"
         "Aapki details verification ke liye Admin ko bhej di gayi hain. Approval milte hi aapko Token receive ho jayega.\n\n"
@@ -226,10 +232,18 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         f"🔴 **YouTube Channel:** {YOUTUBE_CHANNEL_LINK}\n\n"
         "All The Best! 🔥🎮\n— **z.ween2x Management**"
     )
-    await update.message.reply_text(announcement_msg, parse_mode="Markdown")
+    
+    try:
+        await update.message.reply_text(announcement_msg, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Error sending user reply: {e}")
 
-    # DB Save
+    # STEP 2: SAVE TO DATABASE DEFENSIVELY
     player_id = random.randint(10000, 99999)
+    team_id = 1
+    base_code = "TEMP"
+    role_char = context.user_data.get('role_char', 'A')
+
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -241,10 +255,10 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             team_id = cursor.lastrowid
             context.user_data['team_id'] = team_id
             context.user_data['base_code'] = base_code
-        
-        role_char = context.user_data.get('role_char', 'A')
-        team_id = context.user_data.get('team_id', 1)
-        base_code = context.user_data.get('base_code', 'TEMP')
+        else:
+            team_id = context.user_data.get('team_id', 1)
+            base_code = context.user_data.get('base_code', 'TEMP')
+
         temp_token = f"#zween2x-{team_id}-{role_char}-{base_code}"
 
         cursor.execute('''
@@ -265,9 +279,9 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         conn.commit()
         conn.close()
     except Exception as e:
-        logger.error(f"DB Error: {e}")
+        logger.error(f"DB Insert Error: {e}")
 
-    # Admin Alert Notification
+    # STEP 3: ADMIN NOTIFICATION (Wrapped in try-except so it never breaks bot)
     if ADMIN_ID:
         admin_msg = (
             f"🚨 **New Registration Request**\n\n"
@@ -277,7 +291,7 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"📱 **Contact:** {context.user_data.get('contact', 'N/A')}\n"
             f"📍 **Location:** {context.user_data.get('location', 'N/A')}\n"
             f"💳 **UTR:** `{utr_text}`\n"
-            f"🏷️ **Team ID:** #{context.user_data.get('team_id', 1)}\n"
+            f"🏷️ **Team ID:** #{team_id}\n"
             f"📱 **Telegram:** @{user.username or 'N/A'} (ID: `{user.id}`)"
         )
         keyboard = [
@@ -294,7 +308,7 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         except Exception as e:
-            logger.error(f"Admin Notification Error: {e}")
+            logger.error(f"Admin Notification Error (Check if ADMIN_ID has started bot): {e}")
 
     return ConversationHandler.END
 
@@ -315,7 +329,6 @@ def main():
 
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # ConversationHandler with open filters to prevent hanging
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", start),
