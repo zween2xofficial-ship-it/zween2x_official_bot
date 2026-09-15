@@ -33,19 +33,18 @@ ASK_ROLE, ASK_TOKEN, ASK_NAME, ASK_IGN, ASK_UID, ASK_CONTACT, ASK_LOCATION, ASK_
 DB_FILE = "tournament.db"
 
 # -------------------------------------------------------------
-# FLASK WEB SERVER (For Render Keep-Alive)
+# FLASK WEB SERVER (Render Keep-Alive)
 # -------------------------------------------------------------
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "z.ween2x Bot is running 24/7 Live!"
+    return "z.ween2x Bot 24/7 Active!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# Logging Setup
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -95,7 +94,7 @@ def get_upi_qr_url(upi_id, name, amount):
     return f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_uri)}"
 
 # -------------------------------------------------------------
-# BOT CONVERSATION FLOW
+# CONVERSATION FLOW
 # -------------------------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
@@ -142,16 +141,12 @@ async def process_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    
     cursor.execute("SELECT team_id, role, token FROM players WHERE token = ?", (token_input,))
     leader_entry = cursor.fetchone()
     
     if not leader_entry:
         conn.close()
-        await update.message.reply_text(
-            "⚠️ **Invalid Token Code!**\n\nKripya apne Leader se sahi Token maangein aur dobara type karein:",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("⚠️ **Invalid Token Code!** Sahi token dobara enter karein:", parse_mode="Markdown")
         return ASK_TOKEN
     
     team_id = leader_entry[0]
@@ -160,10 +155,7 @@ async def process_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     
     if player_count >= 4:
         conn.close()
-        await update.message.reply_text(
-            "❌ **Team Full!**\nIs team me pehle hi 4 players poore ho chuke hain.",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("❌ **Team Full!** Is team me 4 players poore ho chuke hain.", parse_mode="Markdown")
         return ConversationHandler.END
     
     role_map = {1: 'B', 2: 'C', 3: 'D'}
@@ -173,7 +165,6 @@ async def process_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     cursor.execute("SELECT base_code FROM teams WHERE team_id = ?", (team_id,))
     base_res = cursor.fetchone()
     context.user_data['base_code'] = base_res[0] if base_res else "TEMP"
-    
     conn.close()
     
     await update.message.reply_text("✅ Token Valid! Ab apna **Full Name** enter karein:", parse_mode="Markdown")
@@ -219,19 +210,10 @@ async def get_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     utr = update.message.text.strip()
-    
-    if not utr.isdigit():
-        await update.message.reply_text(
-            "⚠️ **Galat UTR / Transaction Number!**\n\nKripya sirf numbers enter karein (Jaise: 123456789090):",
-            parse_mode="Markdown"
-        )
-        return ASK_PAYMENT
-    
-    context.user_data['utr'] = utr
     user = update.effective_user
-    
+    context.user_data['utr'] = utr
+
     player_id = 1
-    temp_token = "#zween2x-TEMP-TOKEN"
     
     try:
         conn = sqlite3.connect(DB_FILE)
@@ -267,27 +249,25 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         player_id = cursor.lastrowid
         conn.commit()
         conn.close()
-        
     except Exception as e:
         logger.error(f"Database Error: {e}")
 
+    # Reply to User Immediately
     announcement_msg = (
         "⌛ **Registration Request Submitted!**\n\n"
         "Aapki details verification ke liye Admin ko bhej di gayi hain. Approval milte hi aapko Token receive ho jayega.\n\n"
         "📢 **Z.WEEN2X TOURNAMENT - IMPORTANT INSTRUCTIONS** 📢\n\n"
-        "1️⃣ **Telegram Channel Join Karna Mandatory (Zaroori) Hai:**\n"
-        "👉 Tournament ke saare Rules, Match Schedules, Room ID/Password, aur Daily Updates aapko humare official Telegram Channel par hi milenge.\n\n"
-        "2️⃣ **Process Samjhne Ke Liye Video Dekhein:**\n"
-        "👉 Agar aapko kisi bhi step me confusion hai, toh humare YouTube Channel par tutorial video dekh kar samajh sakte hain.\n\n"
-        "3️⃣ **YouTube Channel Ko Subscribe Karein:**\n"
-        "👉 Channel ko Subscribe karna na bhulein, kyunki aapke matches **YOUTUBE PAR LIVE STREAM** honge! 🎥🔥\n\n"
+        "1️⃣ **Telegram Channel Join Karna Mandatory Hai:**\n"
+        "👉 Rules, Match Schedules, Room ID/Password official Telegram Channel par hi milenge.\n\n"
+        "2️⃣ **YouTube Channel Ko Subscribe Karein:**\n"
+        "👉 Aapke matches **YOUTUBE PAR LIVE STREAM** honge! 🎥🔥\n\n"
         f"📲 **Telegram Channel:** {TELEGRAM_CHANNEL_LINK}\n"
         f"🔴 **YouTube Channel:** {YOUTUBE_CHANNEL_LINK}\n\n"
         "All The Best! 🔥🎮\n— **z.ween2x Management**"
     )
-    
     await update.message.reply_text(announcement_msg, parse_mode="Markdown")
     
+    # Notify Admin
     if ADMIN_ID:
         admin_msg = (
             f"🚨 **New Registration Verification Request**\n\n"
@@ -309,12 +289,12 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         try:
             await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
         except Exception as e:
-            logger.error(f"Admin Notification Error: {e}")
+            logger.error(f"Admin Notify Error: {e}")
         
     return ConversationHandler.END
 
 # -------------------------------------------------------------
-# ADMIN SYSTEM & CONTROL HANDLERS
+# ADMIN SYSTEM & CONTROL
 # -------------------------------------------------------------
 async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -354,7 +334,7 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(chat_id=user_id, text=msg, parse_mode="Markdown")
         except Exception as e:
-            logger.error(f"Error sending msg to user: {e}")
+            logger.error(f"Error sending msg: {e}")
             
     elif action == "rej":
         cursor.execute("UPDATE players SET status = 'REJECTED' WHERE id = ?", (player_id,))
@@ -362,9 +342,9 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"❌ **Rejected Player ID #{player_id}**")
         
         try:
-            await context.bot.send_message(chat_id=user_id, text="❌ **Registration Rejected!**\nDetails or Payment verify nahi ho payi.", parse_mode="Markdown")
+            await context.bot.send_message(chat_id=user_id, text="❌ **Registration Rejected!**\nDetails ya Payment verify nahi ho paayi.", parse_mode="Markdown")
         except Exception as e:
-            logger.error(f"Error sending msg to user: {e}")
+            logger.error(f"Error sending msg: {e}")
 
     conn.close()
 
@@ -374,26 +354,20 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    
     cursor.execute("SELECT COUNT(*) FROM teams")
     total_teams = cursor.fetchone()[0]
-    
     cursor.execute("SELECT COUNT(*) FROM players WHERE status = 'APPROVED'")
     approved_players = cursor.fetchone()[0]
-    
     cursor.execute("SELECT COUNT(*) FROM players WHERE status = 'PENDING'")
     pending_players = cursor.fetchone()[0]
-    
     conn.close()
     
     panel_msg = (
-        "👑 **Z.WEEN2X ADMIN DASHBOARD & CONTROL** 👑\n\n"
+        "👑 **Z.WEEN2X ADMIN DASHBOARD** 👑\n\n"
         f"🏆 **Total Teams:** {total_teams}\n"
         f"✅ **Approved Players:** {approved_players}\n"
-        f"⏳ **Pending Registrations:** {pending_players}\n\n"
-        "Aap kisi bhi player ki verification directly approve/reject buttons se kar sakte hain."
+        f"⏳ **Pending Registrations:** {pending_players}\n"
     )
-    
     await update.message.reply_text(panel_msg, parse_mode="Markdown")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -405,7 +379,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # -------------------------------------------------------------
 def main():
     init_db()
-    
     threading.Thread(target=run_flask, daemon=True).start()
 
     application = Application.builder().token(BOT_TOKEN).build()
@@ -425,15 +398,14 @@ def main():
             ASK_LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_location)],
             ASK_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_payment)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
-        per_message=False
+        fallbacks=[CommandHandler("cancel", cancel)]
     )
 
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(CallbackQueryHandler(admin_decision, pattern="^(app|rej)_"))
 
-    logger.info("🚀 z.ween2x Bot Fully Active with Admin Control...")
+    logger.info("🚀 z.ween2x Bot Active!")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
