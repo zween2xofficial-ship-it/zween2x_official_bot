@@ -19,7 +19,7 @@ from telegram.ext import (
 )
 
 # -------------------------------------------------------------
-# DIRECT CONFIGURATION (No Environment Setup Needed)
+# DIRECT CONFIGURATION
 # -------------------------------------------------------------
 BOT_TOKEN = "8913279275:AAFfJaQNp9QRLhV28-jseqLEUFFX3LiboVc"
 ADMIN_ID = 8866210749
@@ -33,7 +33,7 @@ ASK_ROLE, ASK_TOKEN, ASK_NAME, ASK_IGN, ASK_UID, ASK_CONTACT, ASK_LOCATION, ASK_
 DB_FILE = "tournament.db"
 
 # -------------------------------------------------------------
-# FLASK WEB SERVER (For Render Health Checks)
+# FLASK WEB SERVER (For Render Keep-Alive)
 # -------------------------------------------------------------
 app = Flask(__name__)
 
@@ -220,9 +220,9 @@ async def get_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     utr = update.message.text.strip()
     
-    if not (utr.isdigit() and len(utr) >= 8):
+    if not utr.isdigit():
         await update.message.reply_text(
-            "⚠️ **Galat UTR / Transaction Number!**\n\nKripya sahi 12-digit UTR number enter karein:",
+            "⚠️ **Galat UTR / Transaction Number!**\n\nKripya sirf numbers enter karein (Jaise: 123456789090):",
             parse_mode="Markdown"
         )
         return ASK_PAYMENT
@@ -230,37 +230,47 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     context.user_data['utr'] = utr
     user = update.effective_user
     
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
+    player_id = 1
+    temp_token = "#zween2x-TEMP-TOKEN"
     
-    if context.user_data.get('is_leader'):
-        base_code = generate_random_code(5)
-        cursor.execute("INSERT INTO teams (base_code, created_at) VALUES (?, ?)", 
-                       (base_code, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        team_id = cursor.lastrowid
-        context.user_data['team_id'] = team_id
-        context.user_data['base_code'] = base_code
-    
-    role_char = context.user_data.get('role_char', 'A')
-    team_id = context.user_data.get('team_id', 1)
-    base_code = context.user_data.get('base_code', 'TEMP')
-    temp_token = f"#zween2x-{team_id}-{role_char}-{base_code}"
-    
-    cursor.execute('''
-        INSERT INTO players (team_id, role, user_id, full_name, ign, ff_uid, contact, location, utr, token, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)
-    ''', (
-        team_id, role_char, user.id,
-        context.user_data.get('full_name', ''), context.user_data.get('ign', ''),
-        context.user_data.get('ff_uid', ''), context.user_data.get('contact', ''),
-        context.user_data.get('location', ''), utr, temp_token,
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ))
-    
-    player_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        if context.user_data.get('is_leader', True):
+            base_code = generate_random_code(5)
+            cursor.execute("INSERT INTO teams (base_code, created_at) VALUES (?, ?)", 
+                           (base_code, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            team_id = cursor.lastrowid
+            context.user_data['team_id'] = team_id
+            context.user_data['base_code'] = base_code
+        
+        role_char = context.user_data.get('role_char', 'A')
+        team_id = context.user_data.get('team_id', 1)
+        base_code = context.user_data.get('base_code', 'TEMP')
+        temp_token = f"#zween2x-{team_id}-{role_char}-{base_code}"
+        
+        cursor.execute('''
+            INSERT INTO players (team_id, role, user_id, full_name, ign, ff_uid, contact, location, utr, token, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)
+        ''', (
+            team_id, role_char, user.id,
+            context.user_data.get('full_name', 'N/A'),
+            context.user_data.get('ign', 'N/A'),
+            context.user_data.get('ff_uid', 'N/A'),
+            context.user_data.get('contact', 'N/A'),
+            context.user_data.get('location', 'N/A'),
+            utr, temp_token,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ))
+        
+        player_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+    except Exception as e:
+        logger.error(f"Database Error: {e}")
+
     announcement_msg = (
         "⌛ **Registration Request Submitted!**\n\n"
         "Aapki details verification ke liye Admin ko bhej di gayi hain. Approval milte hi aapko Token receive ho jayega.\n\n"
@@ -278,28 +288,28 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     await update.message.reply_text(announcement_msg, parse_mode="Markdown")
     
-    # Notify Admin
-    admin_msg = (
-        f"🚨 **New Registration Verification Request**\n\n"
-        f"👤 **Name:** {context.user_data.get('full_name')}\n"
-        f"🎮 **IGN:** {context.user_data.get('ign')}\n"
-        f"🆔 **FF UID:** {context.user_data.get('ff_uid')}\n"
-        f"📱 **Contact:** {context.user_data.get('contact')}\n"
-        f"📍 **Location:** {context.user_data.get('location')}\n"
-        f"💳 **UTR:** `{utr}`\n"
-        f"🏷️ **Role/Team:** Team #{team_id} ({role_char})\n"
-        f"📱 **Telegram:** @{user.username or 'N/A'} (ID: `{user.id}`)"
-    )
-    keyboard = [
-        [
-            InlineKeyboardButton("✅ Verify", callback_data=f"app_{player_id}"),
-            InlineKeyboardButton("❌ Reject", callback_data=f"rej_{player_id}")
+    if ADMIN_ID:
+        admin_msg = (
+            f"🚨 **New Registration Verification Request**\n\n"
+            f"👤 **Name:** {context.user_data.get('full_name')}\n"
+            f"🎮 **IGN:** {context.user_data.get('ign')}\n"
+            f"🆔 **FF UID:** {context.user_data.get('ff_uid')}\n"
+            f"📱 **Contact:** {context.user_data.get('contact')}\n"
+            f"📍 **Location:** {context.user_data.get('location')}\n"
+            f"💳 **UTR:** `{utr}`\n"
+            f"🏷️ **Role/Team:** Team #{context.user_data.get('team_id', 1)} ({context.user_data.get('role_char', 'A')})\n"
+            f"📱 **Telegram:** @{user.username or 'N/A'} (ID: `{user.id}`)"
+        )
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Verify", callback_data=f"app_{player_id}"),
+                InlineKeyboardButton("❌ Reject", callback_data=f"rej_{player_id}")
+            ]
         ]
-    ]
-    try:
-        await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-    except Exception as e:
-        logger.error(f"Failed to send admin notification: {e}")
+        try:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception as e:
+            logger.error(f"Admin Notification Error: {e}")
         
     return ConversationHandler.END
 
@@ -396,7 +406,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 def main():
     init_db()
     
-    # Start Flask Web Server
     threading.Thread(target=run_flask, daemon=True).start()
 
     application = Application.builder().token(BOT_TOKEN).build()
