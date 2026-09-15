@@ -40,6 +40,7 @@ ENTRY_FEE = 100
 
 TELEGRAM_CHANNEL_LINK = "https://t.me/+W0nd-axUCgdiZWZl"
 YOUTUBE_CHANNEL_LINK = "https://youtube.com/@zween2x?si=m7m_AMXn87dwO4wS"
+SUPPORT_TELEGRAM_LINK = "https://t.me/zween2xofficial"
 
 ASK_ROLE, ASK_TOKEN, ASK_NAME, ASK_IGN, ASK_UID, ASK_CONTACT, ASK_LOCATION, ASK_PAYMENT = range(8)
 DB_FILE = "tournament.db"
@@ -159,6 +160,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "📌 **Tutorial & Help:**\n"
         "Agar aapko **Team Registration** me ya **Team Join** karne me koi bhi dikkat aa rahi hai, "
         "toh niche button par click karke humari YouTube video zaroor dekhein.\n\n"
+        f"💬 **Adhik jankari ke liye sampark kare telegram id :-** {SUPPORT_TELEGRAM_LINK}\n\n"
         "--- Aap tournament me kis tarah register karna chahte hain? ---\n\n"
         "1️⃣ **Nayi Team Banayein (Team Leader)**\n"
         "2️⃣ **Pehle Se Bani Team Me Judein (Teammate)**\n\n"
@@ -286,6 +288,7 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         "--------------------------------------------------\n"
         "🔴 **YouTube Channel:**\n"
         f"👉 {YOUTUBE_CHANNEL_LINK}\n\n"
+        f"💬 **Adhik jankari ke liye sampark kare telegram id :-** {SUPPORT_TELEGRAM_LINK}\n\n"
         "All The Best! 🔥🎮\n— **z.ween2x Management**"
     )
     
@@ -469,7 +472,8 @@ async def admin_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"📋 **Aapki Team Ki Details:**\n\n"
                 f"{team_info_text}\n\n"
                 f"📲 Telegram: {TELEGRAM_CHANNEL_LINK}\n"
-                f"🔴 YouTube: {YOUTUBE_CHANNEL_LINK}"
+                f"🔴 YouTube: {YOUTUBE_CHANNEL_LINK}\n"
+                f"💬 Support: {SUPPORT_TELEGRAM_LINK}"
             )
             try:
                 await context.bot.send_message(chat_id=user_id, text=user_msg, parse_mode="Markdown")
