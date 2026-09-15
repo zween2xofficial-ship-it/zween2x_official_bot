@@ -19,14 +19,21 @@ from telegram.ext import (
 )
 
 # -------------------------------------------------------------
-# CONFIGURATION
+# CONFIGURATION (Render Environment Variables)
 # -------------------------------------------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
+
 ADMIN_ID_RAW = os.environ.get("ADMIN_ID", "8866210749")
 try:
     ADMIN_ID = int(ADMIN_ID_RAW)
 except ValueError:
     ADMIN_ID = 8866210749
+
+CHANNEL_ID_RAW = os.environ.get("CHANNEL_ID", "-1004457184051")
+try:
+    OFFICIAL_CHANNEL_ID = int(CHANNEL_ID_RAW)
+except ValueError:
+    OFFICIAL_CHANNEL_ID = -1004457184051
 
 UPI_ID = "z.ween2x.official@okaxis"
 ENTRY_FEE = 100
@@ -38,7 +45,7 @@ ASK_ROLE, ASK_TOKEN, ASK_NAME, ASK_IGN, ASK_UID, ASK_CONTACT, ASK_LOCATION, ASK_
 DB_FILE = "tournament.db"
 
 # -------------------------------------------------------------
-# FLASK WEB SERVER (For Render Keep-Alive)
+# FLASK WEB SERVER (Keep Alive on Render)
 # -------------------------------------------------------------
 app = Flask(__name__)
 
@@ -100,8 +107,46 @@ def get_upi_qr_url(upi_id, name, amount):
     upi_uri = f"upi://pay?{urllib.parse.urlencode(params)}"
     return f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_uri)}"
 
+def build_team_info_text(team_id):
+    """Formats team member details cleanly for messages and channel posts"""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT role, full_name, ign, ff_uid, contact, status, token 
+            FROM players 
+            WHERE team_id = ? 
+            ORDER BY role ASC
+        ''', (team_id,))
+        players = cursor.fetchall()
+        conn.close()
+
+        if not players:
+            return None
+
+        msg = f"🏆 **TEAM DETAILS FOR TEAM #{team_id}**\n\n"
+        role_names = {'A': '👑 Leader (Player A)', 'B': '🎮 Teammate B', 'C': '🎮 Teammate C', 'D': '🎮 Teammate D'}
+        
+        for p in players:
+            p_role, p_name, p_ign, p_uid, p_contact, p_status, p_token = p
+            status_icon = "✅ Approved" if p_status == "APPROVED" else ("⌛ Pending" if p_status == "PENDING" else "❌ Rejected")
+            msg += (
+                f"--- {role_names.get(p_role, p_role)} ---\n"
+                f"👤 **Name:** {p_name}\n"
+                f"🎮 **IGN:** {p_ign}\n"
+                f"🆔 **UID:** `{p_uid}`\n"
+                f"📱 **Contact:** {p_contact}\n"
+                f"📌 **Status:** {status_icon}\n"
+                f"🔑 **Token:** `{p_token}`\n\n"
+            )
+        msg += f"📊 Total Players Registered: **{len(players)}/4**"
+        return msg
+    except Exception as e:
+        logger.error(f"Error building team info text: {e}")
+        return None
+
 # -------------------------------------------------------------
-# HANDLERS
+# CONVERSATION HANDLERS
 # -------------------------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
@@ -331,7 +376,6 @@ async def team_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
 
-        # Check if input is Token or Team ID
         if query_param.startswith("#zween2x") or "-" in query_param:
             cursor.execute("SELECT team_id FROM players WHERE token = ?", (query_param,))
             res = cursor.fetchone()
@@ -347,49 +391,20 @@ async def team_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("⚠️ Invalid Team ID or Token format!")
                 conn.close()
                 return
-
-        # Fetch Team Players
-        cursor.execute('''
-            SELECT role, full_name, ign, ff_uid, contact, status, token 
-            FROM players 
-            WHERE team_id = ? 
-            ORDER BY role ASC
-        ''', (target_team_id,))
-        
-        players = cursor.fetchall()
         conn.close()
 
-        if not players:
+        response_msg = build_team_info_text(target_team_id)
+        if response_msg:
+            await update.message.reply_text(response_msg, parse_mode="Markdown")
+        else:
             await update.message.reply_text(f"❌ Team #{target_team_id} me koi players nahi mile.")
-            return
-
-        response_msg = f"🏆 **TEAM DETAILS FOR TEAM #{target_team_id}**\n\n"
-        
-        role_names = {'A': '👑 Leader (Player A)', 'B': '🎮 Teammate B', 'C': '🎮 Teammate C', 'D': '🎮 Teammate D'}
-        
-        for p in players:
-            p_role, p_name, p_ign, p_uid, p_contact, p_status, p_token = p
-            status_icon = "✅ Approved" if p_status == "APPROVED" else ("⌛ Pending" if p_status == "PENDING" else "❌ Rejected")
-            
-            response_msg += (
-                f"--- {role_names.get(p_role, p_role)} ---\n"
-                f"👤 **Name:** {p_name}\n"
-                f"🎮 **IGN:** {p_ign}\n"
-                f"🆔 **UID:** `{p_uid}`\n"
-                f"📱 **Contact:** {p_contact}\n"
-                f"📌 **Status:** {status_icon}\n"
-                f"🔑 **Token:** `{p_token}`\n\n"
-            )
-
-        response_msg += f"📊 Total Players Registered: **{len(players)}/4**"
-        await update.message.reply_text(response_msg, parse_mode="Markdown")
 
     except Exception as e:
         logger.error(f"Error fetching team details: {e}")
         await update.message.reply_text("⚠️ Team details fetch karne me issue aaya.")
 
 # -------------------------------------------------------------
-# ADMIN BUTTON CALLBACK HANDLER (VERIFY / REJECT)
+# ADMIN BUTTON CALLBACK HANDLER (VERIFY / REJECT + AUTO CHANNEL POST)
 # -------------------------------------------------------------
 async def admin_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -405,7 +420,7 @@ async def admin_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute("SELECT user_id, token, full_name, role FROM players WHERE id = ?", (player_id,))
+        cursor.execute("SELECT user_id, token, full_name, role, team_id FROM players WHERE id = ?", (player_id,))
         player = cursor.fetchone()
 
         if not player:
@@ -413,35 +428,80 @@ async def admin_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
             conn.close()
             return
 
-        user_id, token, full_name, role = player
+        user_id, token, full_name, role, team_id = player
 
         if action == "app":
             cursor.execute("UPDATE players SET status = 'APPROVED' WHERE id = ?", (player_id,))
             conn.commit()
             
+            # Fetch all approved teammates
+            cursor.execute("SELECT user_id, full_name FROM players WHERE team_id = ? AND status = 'APPROVED'", (team_id,))
+            approved_members = cursor.fetchall()
+            approved_count = len(approved_members)
+            conn.close()
+
             await query.edit_message_text(
                 f"✅ **REGISTRATION APPROVED**\n\n"
                 f"👤 **Player:** {full_name}\n"
                 f"🔑 **Token:** `{token}`\n"
-                f"STATUS: VERIFIED"
+                f"🏷️ **Team ID:** #{team_id}\n"
+                f"STATUS: VERIFIED ({approved_count}/4 Players Approved)"
             )
 
+            team_info_text = build_team_info_text(team_id)
+
+            # 1. Send Approval to New Member
             user_msg = (
                 f"🎉 **CONGRATULATIONS! Registration Approved!** 🎉\n\n"
-                f"Aapka payment verify ho gaya hai. Aapka Registration Token niche diya gaya hai:\n\n"
+                f"Aapka payment verify ho gaya hai. Your Token:\n"
                 f"🔑 **Your Token:** `{token}`\n\n"
-                f"*(Note: Agar aap Team Leader hain, to ye Token apni team members ke sath share karein taaki wo register kar sakein.)*\n\n"
-                f"📢 Telegram Channel: {TELEGRAM_CHANNEL_LINK}\n"
-                f"🔴 YouTube Live: {YOUTUBE_CHANNEL_LINK}"
+                f"📋 **Aapki Team Ki Details:**\n\n"
+                f"{team_info_text}\n\n"
+                f"📢 Telegram: {TELEGRAM_CHANNEL_LINK}\n"
+                f"🔴 YouTube: {YOUTUBE_CHANNEL_LINK}"
             )
             try:
                 await context.bot.send_message(chat_id=user_id, text=user_msg, parse_mode="Markdown")
             except Exception as e:
                 logger.error(f"Failed to send approval message to user: {e}")
 
+            # 2. Notify existing teammates
+            for member_user_id, member_name in approved_members:
+                if member_user_id != user_id:
+                    broadcast_msg = (
+                        f"🔔 **NEW TEAMMATE JOINED!**\n\n"
+                        f"Aapki team me **{full_name}** (Player {role}) successfully approve ho chuke hain!\n\n"
+                        f"{team_info_text}"
+                    )
+                    try:
+                        await context.bot.send_message(chat_id=member_user_id, text=broadcast_msg, parse_mode="Markdown")
+                    except Exception as e:
+                        logger.error(f"Failed to broadcast update to user {member_user_id}: {e}")
+
+            # 3. IF TEAM IS COMPLETE (4 APPROVED PLAYERS) -> AUTO POST TO CHANNEL!
+            if approved_count == 4:
+                channel_post_msg = (
+                    f"🔥 **NEW TEAM REGISTERED & READY FOR MATCH!** 🔥\n\n"
+                    f"🎉 **Team #{team_id}** ne successfully apne 4 players complete aur verify kar liye hain!\n\n"
+                    f"{team_info_text}\n\n"
+                    f"⚔️ All the best to Team #{team_id} for the upcoming tournament matches!\n\n"
+                    f"📢 Channel: {TELEGRAM_CHANNEL_LINK}\n"
+                    f"🔴 Live Streams: {YOUTUBE_CHANNEL_LINK}"
+                )
+                try:
+                    await context.bot.send_message(
+                        chat_id=OFFICIAL_CHANNEL_ID,
+                        text=channel_post_msg,
+                        parse_mode="Markdown"
+                    )
+                    logger.info(f"Successfully posted completed Team #{team_id} to Official Channel!")
+                except Exception as e:
+                    logger.error(f"Failed to post team completion to channel: {e}")
+
         elif action == "rej":
             cursor.execute("UPDATE players SET status = 'REJECTED' WHERE id = ?", (player_id,))
             conn.commit()
+            conn.close()
 
             await query.edit_message_text(
                 f"❌ **REGISTRATION REJECTED**\n\n"
@@ -458,7 +518,6 @@ async def admin_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
             except Exception as e:
                 logger.error(f"Failed to send rejection message to user: {e}")
 
-        conn.close()
     except Exception as e:
         logger.error(f"Error processing admin decision: {e}")
         await query.edit_message_text(f"⚠️ Error processing request: {str(e)}")
@@ -468,7 +527,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 # -------------------------------------------------------------
-# MAIN APP EXECUTION
+# MAIN EXECUTION
 # -------------------------------------------------------------
 def main():
     if not BOT_TOKEN:
