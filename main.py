@@ -19,7 +19,7 @@ from telegram.ext import (
 )
 
 # -------------------------------------------------------------
-# ENVIRONMENT & CONFIGURATION (NO HARDCODED TOKENS)
+# ENVIRONMENT CONFIGURATION (SECURE & DYNAMIC)
 # -------------------------------------------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "8866210749"))
@@ -33,7 +33,7 @@ ASK_ROLE, ASK_TOKEN, ASK_NAME, ASK_IGN, ASK_UID, ASK_CONTACT, ASK_LOCATION, ASK_
 DB_FILE = "tournament.db"
 
 # -------------------------------------------------------------
-# FLASK WEB SERVER (Render Keep-Alive)
+# FLASK WEB SERVER (Render Keep-Alive 24/7)
 # -------------------------------------------------------------
 app = Flask(__name__)
 
@@ -52,7 +52,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # -------------------------------------------------------------
-# SAFE DATABASE INITIALIZATION
+# DATABASE MANAGEMENT
 # -------------------------------------------------------------
 def init_db():
     try:
@@ -79,13 +79,14 @@ def init_db():
                 utr TEXT,
                 token TEXT UNIQUE,
                 status TEXT,
-                created_at TEXT
+                created_at TEXT,
+                FOREIGN KEY(team_id) REFERENCES teams(team_id)
             )
         ''')
         conn.commit()
         conn.close()
     except Exception as e:
-        logger.error(f"Database Initialization Error: {e}")
+        logger.error(f"Database Init Error: {e}")
 
 def generate_random_code(length=5):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
@@ -96,7 +97,7 @@ def get_upi_qr_url(upi_id, name, amount):
     return f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_uri)}"
 
 # -------------------------------------------------------------
-# FLOW LOGIC
+# CONVERSATION FLOW (USER REGISTRATION)
 # -------------------------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
@@ -170,8 +171,8 @@ async def process_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         context.user_data['base_code'] = base_res[0] if base_res else "TEMP"
         conn.close()
     except Exception as e:
-        logger.error(f"Token Verification Error: {e}")
-    
+        logger.error(f"Token Processing Error: {e}")
+
     await update.message.reply_text("✅ Token Valid! Ab apna **Full Name** enter karein:", parse_mode="Markdown")
     return ASK_NAME
 
@@ -257,7 +258,7 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except Exception as e:
         logger.error(f"Database Save Error: {e}")
 
-    # Reply to User
+    # Immediate User Confirmation
     announcement_msg = (
         "⌛ **Registration Request Submitted!**\n\n"
         "Aapki details verification ke liye Admin ko bhej di gayi hain. Approval milte hi aapko Token receive ho jayega.\n\n"
@@ -272,7 +273,7 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
     await update.message.reply_text(announcement_msg, parse_mode="Markdown")
     
-    # Send Notification to Admin
+    # Notify Admin Control Room
     if ADMIN_ID:
         admin_msg = (
             f"🚨 **New Registration Verification Request**\n\n"
@@ -299,7 +300,7 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return ConversationHandler.END
 
 # -------------------------------------------------------------
-# ADMIN CONTROLS
+# ADMIN HANDLERS
 # -------------------------------------------------------------
 async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -319,7 +320,7 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player = cursor.fetchone()
     
     if not player:
-        await query.edit_message_text("❌ Entry Not Found in local DB!")
+        await query.edit_message_text("❌ Entry Not Found!")
         conn.close()
         return
 
@@ -339,7 +340,7 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(chat_id=user_id, text=msg, parse_mode="Markdown")
         except Exception as e:
-            logger.error(f"Error sending msg to user: {e}")
+            logger.error(f"User Msg Send Error: {e}")
             
     elif action == "rej":
         cursor.execute("UPDATE players SET status = 'REJECTED' WHERE id = ?", (player_id,))
@@ -349,7 +350,7 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(chat_id=user_id, text="❌ **Registration Rejected!**\nDetails ya Payment verify nahi ho paayi.", parse_mode="Markdown")
         except Exception as e:
-            logger.error(f"Error sending msg: {e}")
+            logger.error(f"User Msg Send Error: {e}")
 
     conn.close()
 
@@ -380,11 +381,11 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 # -------------------------------------------------------------
-# MAIN APPLICATION ENGINE
+# MAIN APP EXECUTION
 # -------------------------------------------------------------
 def main():
     if not BOT_TOKEN:
-        logger.error("FATAL: BOT_TOKEN Environment variable missing!")
+        logger.error("FATAL: BOT_TOKEN is missing from Environment Variables!")
         return
 
     init_db()
@@ -414,7 +415,7 @@ def main():
     application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(CallbackQueryHandler(admin_decision, pattern="^(app|rej)_"))
 
-    logger.info("🚀 z.ween2x Bot Active!")
+    logger.info("🚀 z.ween2x Official Bot Started!")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
