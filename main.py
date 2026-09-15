@@ -18,12 +18,28 @@ from telegram.ext import (
     filters,
 )
 
-# Dummy Web Server for Render Health Checks
+# -------------------------------------------------------------
+# DIRECT CONFIGURATION (No Environment Setup Needed)
+# -------------------------------------------------------------
+BOT_TOKEN = "8913279275:AAFfJaQNp9QRLhV28-jseqLEUFFX3LiboVc"
+ADMIN_ID = 8866210749
+UPI_ID = "z.ween2x.official@okaxis"
+ENTRY_FEE = 100
+
+TELEGRAM_CHANNEL_LINK = "https://t.me/+W0nd-axUCgdiZWZl"
+YOUTUBE_CHANNEL_LINK = "https://youtube.com/@zween2x?si=NlZ7_M-fJ-Dg3B0T"
+
+ASK_ROLE, ASK_TOKEN, ASK_NAME, ASK_IGN, ASK_UID, ASK_CONTACT, ASK_LOCATION, ASK_PAYMENT = range(8)
+DB_FILE = "tournament.db"
+
+# -------------------------------------------------------------
+# FLASK WEB SERVER (For Render Health Checks)
+# -------------------------------------------------------------
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "z.ween2x Bot is running live!"
+    return "z.ween2x Bot is running 24/7 Live!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -36,19 +52,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Config & Environment Variables
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_ID_RAW = os.environ.get("ADMIN_ID")
-ADMIN_ID = int(ADMIN_ID_RAW) if ADMIN_ID_RAW and ADMIN_ID_RAW.isdigit() else None
-UPI_ID = "z.ween2x.official@okaxis"
-ENTRY_FEE = 100
-
-TELEGRAM_CHANNEL_LINK = "https://t.me/+W0nd-axUCgdiZWZl"
-YOUTUBE_CHANNEL_LINK = "https://youtube.com/@zween2x?si=NlZ7_M-fJ-Dg3B0T"
-
-ASK_ROLE, ASK_TOKEN, ASK_NAME, ASK_IGN, ASK_UID, ASK_CONTACT, ASK_LOCATION, ASK_PAYMENT = range(8)
-DB_FILE = "tournament.db"
-
+# -------------------------------------------------------------
+# DATABASE INITIALIZATION
+# -------------------------------------------------------------
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -88,6 +94,9 @@ def get_upi_qr_url(upi_id, name, amount):
     upi_uri = f"upi://pay?{urllib.parse.urlencode(params)}"
     return f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_uri)}"
 
+# -------------------------------------------------------------
+# BOT CONVERSATION FLOW
+# -------------------------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     welcome_msg = (
@@ -140,8 +149,7 @@ async def process_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if not leader_entry:
         conn.close()
         await update.message.reply_text(
-            "⚠️ **Invalid Token Code!**\n\n"
-            "Kripya apne Leader se sahi Token maangein aur dobara type karein:",
+            "⚠️ **Invalid Token Code!**\n\nKripya apne Leader se sahi Token maangein aur dobara type karein:",
             parse_mode="Markdown"
         )
         return ASK_TOKEN
@@ -270,35 +278,42 @@ async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     await update.message.reply_text(announcement_msg, parse_mode="Markdown")
     
-    if ADMIN_ID:
-        admin_msg = (
-            f"🚨 **New Registration Verification Request**\n\n"
-            f"👤 **Name:** {context.user_data.get('full_name')}\n"
-            f"🎮 **IGN:** {context.user_data.get('ign')}\n"
-            f"🆔 **FF UID:** {context.user_data.get('ff_uid')}\n"
-            f"📱 **Contact:** {context.user_data.get('contact')}\n"
-            f"📍 **Location:** {context.user_data.get('location')}\n"
-            f"💳 **UTR:** `{utr}`\n"
-            f"🏷️ **Role/Team:** Team #{team_id} ({role_char})\n"
-            f"📱 **Telegram:** @{user.username or 'N/A'} (ID: `{user.id}`)"
-        )
-        keyboard = [
-            [
-                InlineKeyboardButton("✅ Verify", callback_data=f"app_{player_id}"),
-                InlineKeyboardButton("❌ Reject", callback_data=f"rej_{player_id}")
-            ]
+    # Notify Admin
+    admin_msg = (
+        f"🚨 **New Registration Verification Request**\n\n"
+        f"👤 **Name:** {context.user_data.get('full_name')}\n"
+        f"🎮 **IGN:** {context.user_data.get('ign')}\n"
+        f"🆔 **FF UID:** {context.user_data.get('ff_uid')}\n"
+        f"📱 **Contact:** {context.user_data.get('contact')}\n"
+        f"📍 **Location:** {context.user_data.get('location')}\n"
+        f"💳 **UTR:** `{utr}`\n"
+        f"🏷️ **Role/Team:** Team #{team_id} ({role_char})\n"
+        f"📱 **Telegram:** @{user.username or 'N/A'} (ID: `{user.id}`)"
+    )
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Verify", callback_data=f"app_{player_id}"),
+            InlineKeyboardButton("❌ Reject", callback_data=f"rej_{player_id}")
         ]
-        try:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-        except Exception as e:
-            logger.error(f"Failed to send admin notification: {e}")
+    ]
+    try:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    except Exception as e:
+        logger.error(f"Failed to send admin notification: {e}")
         
     return ConversationHandler.END
 
+# -------------------------------------------------------------
+# ADMIN SYSTEM & CONTROL HANDLERS
+# -------------------------------------------------------------
 async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
+    if query.from_user.id != ADMIN_ID:
+        await query.answer("⚠️ Unauthorised Access!", show_alert=True)
+        return
+        
     data = query.data
     action, player_id = data.split("_")
     player_id = int(player_id)
@@ -318,7 +333,7 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action == "app":
         cursor.execute("UPDATE players SET status = 'APPROVED' WHERE id = ?", (player_id,))
         conn.commit()
-        await query.edit_message_text(f"✅ Approved Player ID #{player_id}")
+        await query.edit_message_text(f"✅ **Approved Player ID #{player_id}**")
         
         msg = f"🎉 **Registration Confirmed!**\n\nAapka Unique Token Code:\n`{token}`\n\n"
         if role == 'A':
@@ -329,31 +344,59 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(chat_id=user_id, text=msg, parse_mode="Markdown")
         except Exception as e:
-            logger.error(f"Error sending msg: {e}")
+            logger.error(f"Error sending msg to user: {e}")
             
     elif action == "rej":
         cursor.execute("UPDATE players SET status = 'REJECTED' WHERE id = ?", (player_id,))
         conn.commit()
-        await query.edit_message_text(f"❌ Rejected Player ID #{player_id}")
+        await query.edit_message_text(f"❌ **Rejected Player ID #{player_id}**")
         
         try:
-            await context.bot.send_message(chat_id=user_id, text="❌ **Registration Rejected!**\nDetails verify nahi hui.", parse_mode="Markdown")
+            await context.bot.send_message(chat_id=user_id, text="❌ **Registration Rejected!**\nDetails or Payment verify nahi ho payi.", parse_mode="Markdown")
         except Exception as e:
-            logger.error(f"Error sending msg: {e}")
+            logger.error(f"Error sending msg to user: {e}")
 
     conn.close()
+
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT COUNT(*) FROM teams")
+    total_teams = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM players WHERE status = 'APPROVED'")
+    approved_players = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM players WHERE status = 'PENDING'")
+    pending_players = cursor.fetchone()[0]
+    
+    conn.close()
+    
+    panel_msg = (
+        "👑 **Z.WEEN2X ADMIN DASHBOARD & CONTROL** 👑\n\n"
+        f"🏆 **Total Teams:** {total_teams}\n"
+        f"✅ **Approved Players:** {approved_players}\n"
+        f"⏳ **Pending Registrations:** {pending_players}\n\n"
+        "Aap kisi bhi player ki verification directly approve/reject buttons se kar sakte hain."
+    )
+    
+    await update.message.reply_text(panel_msg, parse_mode="Markdown")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("❌ Process cancelled.")
     return ConversationHandler.END
 
+# -------------------------------------------------------------
+# MAIN APPLICATION ENGINE
+# -------------------------------------------------------------
 def main():
-    if not BOT_TOKEN:
-        raise ValueError("BOT_TOKEN Variable Missing!")
-
     init_db()
     
-    # Start Web Server in background thread
+    # Start Flask Web Server
     threading.Thread(target=run_flask, daemon=True).start()
 
     application = Application.builder().token(BOT_TOKEN).build()
@@ -378,9 +421,10 @@ def main():
     )
 
     application.add_handler(conv_handler)
+    application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(CallbackQueryHandler(admin_decision, pattern="^(app|rej)_"))
 
-    logger.info("🚀 z.ween2x Bot Active...")
+    logger.info("🚀 z.ween2x Bot Fully Active with Admin Control...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
